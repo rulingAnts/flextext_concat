@@ -62,8 +62,20 @@ Verified against SIL's spec (Ken Zook, *Technical Notes on FLEx Text Interlinear
   `SetVernacularLanguagesByUsage()` and guesses which writing system is vernacular.
 - `document/@version`: `2` is standard; `3` (FLEx 9.3.5+) adds `<run>` children for
   embedded writing systems/styles. Emit `3` if any input is v3 or contains `<run>`.
+- **`segnum` is write-only.** `BIRDInterlinearImporter.AddSegmentItemData` has an
+  explicit `case "segnum": break;` — "not associated to a property, and also not a
+  custom field". It is written on export from the reference FLEx computes for the
+  screen, so nothing you put there survives import. `reference-label` →
+  `Segment.Reference` is the one that *is* stored; never strip or rewrite it.
+  Verified 2026-08-14 against FieldWorks `main`.
 - Known false positives when validating real files against the XSD: FLEx writes
   `language/@RightToLeft` (undeclared in the schema) and ELAN omits `<words>`.
+- **A `.flextext` file never records its recording's duration.** Combined mode's
+  offset-shifting estimates it from the last annotation, which is exact only when
+  the annotation tiles the recording contiguously from zero (the flextext.app
+  style). ELAN-style annotation marks utterances and leaves gaps, so trailing audio
+  is invisible and later texts drift cumulatively. Always surface which texts are
+  estimates rather than presenting shifted output as exact.
 - Seth's own corpus mixes three producer dialects (flextext.app, FLEx/xLingPaper,
   ELAN-annotated) differing in indentation, attribute order, and whether `<media-files>`
   precedes or follows `<languages>`. Output is normalised to FLEx's ordering.

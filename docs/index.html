@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FLExText Concatenator &mdash; Documentation</title>
+  <style>
+    :root {
+      --accent:   #0f766e;
+      --accent-d: #115e59;
+      --bg:       #ffffff;
+      --bg2:      #f8fafc;
+      --border:   #e2e8f0;
+      --text:     #1e293b;
+      --muted:    #64748b;
+      --code-bg:  #f1f5f9;
+      --green:    #16a34a;
+      --red:      #dc2626;
+      --max-w:    860px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 16px; line-height: 1.65;
+      color: var(--text); background: var(--bg);
+    }
+
+    /* ── Nav ── */
+    nav {
+      position: sticky; top: 0; z-index: 100;
+      background: var(--accent); color: #fff;
+      padding: 0 1.5rem;
+      display: flex; align-items: center; gap: 1.6rem;
+      height: 52px; flex-wrap: nowrap; overflow-x: auto;
+    }
+    nav .brand { font-weight: 700; font-size: 1.05rem; white-space: nowrap; margin-right: .4rem; }
+    nav a { color: rgba(255,255,255,.85); text-decoration: none; font-size: .88rem; white-space: nowrap; }
+    nav a:hover { color: #fff; }
+    nav a.nav-dl {
+      background: rgba(255,255,255,.18); border-radius: 6px;
+      padding: .25rem .75rem; color: #fff; font-weight: 600;
+    }
+    nav a.nav-dl:hover { background: rgba(255,255,255,.28); }
+
+    /* ── Layout ── */
+    .page { max-width: var(--max-w); margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+
+    /* ── Hero ── */
+    .hero {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: 10px; padding: 2.5rem 2rem 2rem;
+      margin-bottom: 2.5rem;
+    }
+    .hero h1 { font-size: 2rem; margin-bottom: .4rem; }
+    .hero p  { color: var(--muted); font-size: 1.05rem; max-width: 580px; }
+    .badge-row { margin-top: 1rem; display: flex; gap: .5rem; flex-wrap: wrap; }
+    .badge {
+      display: inline-block; padding: .2rem .7rem;
+      border-radius: 999px; font-size: .78rem; font-weight: 600;
+    }
+    .badge-blue  { background: #dbeafe; color: var(--accent-d); }
+    .badge-green { background: #dcfce7; color: #15803d; }
+    .badge-gray  { background: #f1f5f9; color: var(--muted); }
+
+    /* ── Download cards ── */
+    .dl-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem; margin: 1.8rem 0 .6rem;
+    }
+    .dl-card {
+      border: 1px solid var(--border); border-radius: 10px;
+      padding: 1.2rem 1rem 1rem; background: var(--bg);
+      display: flex; flex-direction: column; gap: .5rem;
+    }
+    .dl-card .plat-name { font-weight: 700; font-size: 1rem; }
+    .dl-card .plat-sub  { font-size: .82rem; color: var(--muted); }
+    .dl-btn {
+      display: inline-block; margin-top: auto; padding: .5rem .9rem;
+      background: var(--accent); color: #fff; border-radius: 7px;
+      text-decoration: none; font-weight: 600; font-size: .9rem;
+      text-align: center; transition: background .15s;
+    }
+    .dl-btn:hover { background: var(--accent-d); }
+    .dl-btn.loading { background: var(--muted); cursor: default; }
+    .dl-meta { font-size: .78rem; color: var(--muted); }
+    .release-line {
+      font-size: .85rem; color: var(--muted); margin-top: .4rem;
+    }
+    .release-line a { color: var(--accent); }
+
+    /* ── Sections ── */
+    h2 {
+      font-size: 1.4rem; margin: 2.5rem 0 .8rem;
+      padding-bottom: .4rem; border-bottom: 2px solid var(--border);
+    }
+    h3 { font-size: 1.05rem; margin: 1.6rem 0 .5rem; color: var(--accent-d); }
+    p  { margin-bottom: .9rem; }
+    ul, ol { padding-left: 1.4rem; margin-bottom: .9rem; }
+    li { margin-bottom: .3rem; }
+
+    /* ── Code ── */
+    code {
+      font-family: "SF Mono", Consolas, "Liberation Mono", monospace;
+      font-size: .88em;
+      background: var(--code-bg); padding: .15em .4em;
+      border-radius: 4px;
+    }
+    pre {
+      background: var(--code-bg); border: 1px solid var(--border);
+      border-radius: 8px; padding: 1rem 1.2rem;
+      overflow-x: auto; margin: .8rem 0 1.2rem;
+      font-size: .88rem; line-height: 1.55;
+    }
+    pre code { background: none; padding: 0; }
+
+    /* ── Tables ── */
+    table {
+      width: 100%; border-collapse: collapse;
+      margin: .8rem 0 1.4rem; font-size: .92rem;
+    }
+    th {
+      background: var(--bg2); text-align: left;
+      padding: .5rem .8rem; border: 1px solid var(--border);
+      font-weight: 600;
+    }
+    td { padding: .45rem .8rem; border: 1px solid var(--border); }
+    tr:nth-child(even) td { background: var(--bg2); }
+
+    /* ── Callouts ── */
+    .callout {
+      border-left: 4px solid var(--accent);
+      background: #eff6ff; padding: .8rem 1rem;
+      border-radius: 0 6px 6px 0; margin: 1rem 0 1.2rem;
+    }
+    .callout.tip  { border-color: var(--green); background: #f0fdf4; }
+    .callout.warn { border-color: #f59e0b; background: #fffbeb; }
+    .callout strong { display: block; margin-bottom: .2rem; }
+
+    /* ── First-run platform tabs ── */
+    .platform-tabs { margin: 1rem 0 1.4rem; }
+    .tab-btns {
+      display: flex; gap: .4rem; margin-bottom: 0;
+      border-bottom: 2px solid var(--border);
+    }
+    .tab-btn {
+      padding: .45rem 1rem; border: 1px solid transparent;
+      border-bottom: none; border-radius: 6px 6px 0 0;
+      background: none; cursor: pointer; font-size: .9rem;
+      color: var(--muted); font-family: inherit;
+      margin-bottom: -2px;
+    }
+    .tab-btn.active {
+      background: var(--bg); border-color: var(--border);
+      border-bottom-color: var(--bg); color: var(--text); font-weight: 600;
+    }
+    .tab-panel {
+      display: none; padding: 1.2rem 1rem;
+      border: 1px solid var(--border); border-top: none;
+      border-radius: 0 0 6px 6px; background: var(--bg);
+    }
+    .tab-panel.active { display: block; }
+    .tab-panel ol { margin: .5rem 0 0; }
+    .tab-panel p { margin-bottom: .5rem; }
+
+    /* ── Layer diagram ── */
+    .layer-box {
+      border: 1px solid var(--border); border-radius: 8px;
+      margin: .8rem 0 1.2rem; overflow: hidden;
+    }
+    .layer-row {
+      display: flex; align-items: center; gap: .5rem;
+      padding: .55rem .9rem; border-bottom: 1px solid var(--border);
+      font-size: .88rem; font-family: "SF Mono", monospace;
+    }
+    .layer-row:last-child { border-bottom: none; }
+    .layer-num {
+      background: var(--accent); color: #fff;
+      border-radius: 4px; padding: .1rem .45rem;
+      font-size: .78rem; font-weight: 700; white-space: nowrap;
+    }
+    .layer-pat { flex: 1; color: var(--text); }
+    .layer-meta { color: var(--muted); font-size: .82rem; }
+
+    /* ── Status indicators ── */
+    .ok  { color: var(--green); font-weight: 700; }
+    .err { color: var(--red);   font-weight: 700; }
+
+    /* ── Footer ── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 1.5rem 0 0; margin-top: 3rem;
+      color: var(--muted); font-size: .88rem;
+    }
+    footer a { color: var(--accent); }
+  </style>
+</head>
+<body>
+
+<nav>
+  <span class="brand">FLExText Concatenator</span>
+  <a href="#download" class="nav-dl">Download</a>
+  <a href="#modes">Two Modes</a>
+  <a href="#first-run">First Run</a>
+  <a href="#interface">Interface</a>
+  <a href="#sorting">Sorting</a>
+  <a href="#audio">Audio</a>
+  <a href="#faq">FAQ</a>
+</nav>
+
+<div class="page">
+
+  <!-- Hero -->
+  <div class="hero">
+    <h1>FLExText Concatenator</h1>
+    <p>Combine SIL FieldWorks interlinear <code>.flextext</code> exports &mdash;
+       either as a corpus of separate texts, or as one combined text with a
+       paragraph per source.</p>
+    <div class="badge-row">
+      <span class="badge badge-green">Windows &middot; macOS &middot; Linux</span>
+      <span class="badge badge-blue">No installation required</span>
+      <span class="badge badge-gray">No external dependencies</span>
+      <span class="badge badge-gray">AGPL-3.0</span>
+    </div>
+  </div>
+
+  <!-- Download -->
+  <h2 id="download">Download</h2>
+
+  <div class="dl-grid" id="dl-grid">
+    <div class="dl-card" id="card-mac">
+      <span class="plat-name">macOS</span>
+      <span class="plat-sub">Apple Silicon (arm64)<br>macOS 13 Ventura or later</span>
+      <a id="dl-mac" class="dl-btn loading" href="#">Loading&hellip;</a>
+      <span class="dl-meta" id="meta-mac"></span>
+    </div>
+    <div class="dl-card" id="card-win">
+      <span class="plat-name">Windows</span>
+      <span class="plat-sub">64-bit (x86_64)<br>Windows 10 / 11</span>
+      <a id="dl-win" class="dl-btn loading" href="#">Loading&hellip;</a>
+      <span class="dl-meta" id="meta-win"></span>
+    </div>
+    <div class="dl-card" id="card-linux">
+      <span class="plat-name">Linux</span>
+      <span class="plat-sub">64-bit (amd64)<br>AppImage &mdash; runs on most distros</span>
+      <a id="dl-linux" class="dl-btn loading" href="#">Loading&hellip;</a>
+      <span class="dl-meta" id="meta-linux"></span>
+    </div>
+  </div>
+
+  <p class="release-line" id="release-line">
+    Fetching latest release&hellip;
+    &ensp;&#x2022;&ensp;
+    <a href="https://github.com/rulingAnts/flextext_concat/releases" target="_blank">All releases &rarr;</a>
+  </p>
+
+  <!-- Two modes -->
+  <h2 id="modes">The two modes</h2>
+
+  <p>Both modes read the same files and respect the order you arrange them in.
+  The difference is what FLEx sees when you import the result.</p>
+
+  <h3>Corpus &mdash; individual texts, one file</h3>
+
+  <p>Every source text stays its own text in FLEx. The output is one
+  <code>&lt;document&gt;</code> holding one <code>&lt;interlinear-text&gt;</code>
+  per source, each keeping its own title, <code>&lt;languages&gt;</code> and
+  <code>&lt;media-files&gt;</code>.</p>
+
+  <div class="callout tip">
+    <strong>Nothing is discarded.</strong> Time offsets, <code>media-file</code>
+    links, speaker names and media lists all survive exactly as they were. Each
+    text's <code>media-file</code> reference points at a <code>&lt;media&gt;</code>
+    entry inside its own text, so merging never breaks the link.
+  </div>
+
+  <h3>Combined Text &mdash; one text in FLEx</h3>
+
+  <p>All the sources become a single FLEx text under a title you supply. Each
+  source text becomes one <code>&lt;paragraph&gt;</code>; every line from that
+  text becomes a <code>&lt;phrase&gt;</code> inside it. Sources that already had
+  several paragraphs are flattened into one.</p>
+
+  <div class="callout warn">
+    <strong>By default this discards audio segmentation permanently</strong> &mdash;
+    phrase time offsets, <code>media-file</code> links, speaker names and the
+    <code>&lt;media-files&gt;</code> list. The app warns you before it does, and
+    only when the files you loaded actually contain any. See
+    <a href="#audio">Audio segmentation</a> for the alternative, which keeps the
+    timing. Your source files are never modified either way.
+  </div>
+
+  <p>Options in this mode:</p>
+
+  <table>
+    <thead><tr><th>Option</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>Title</strong> + language</td>
+        <td>Required. Becomes the new text's
+            <code>&lt;item type="title"&gt;</code>. The language list is filled
+            from the writing systems found in your files.</td>
+      </tr>
+      <tr>
+        <td><strong>Source titles as notes</strong></td>
+        <td>Adds each source text's title as a note on its paragraph's first
+            line, so you can see where each original text begins. A paragraph
+            cannot carry a title of its own, which is why it attaches to a
+            phrase.</td>
+      </tr>
+      <tr>
+        <td><strong>Line numbers (segnum)</strong></td>
+        <td>Remove (default), renumber continuously, or keep each text's
+            original numbers. See <a href="#segnum">below</a>.</td>
+      </tr>
+      <tr>
+        <td><strong>Strip audio timestamp notes</strong></td>
+        <td>Removes notes whose entire content is a timestamp like
+            <code>audio ~0:00.000&ndash;0:02.421</code>. Notes that mix real
+            commentary with a timestamp are left alone.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- First Run -->
+  <h2 id="first-run">First Run</h2>
+
+  <p>Because the app is not signed with a platform certificate, each operating
+  system will warn you before it runs for the first time. This is expected &mdash;
+  the steps below take about 30 seconds and only need to be done once per
+  downloaded copy.</p>
+
+  <div class="platform-tabs">
+    <div class="tab-btns">
+      <button class="tab-btn active" onclick="showTab('mac',this)">macOS</button>
+      <button class="tab-btn"        onclick="showTab('win',this)">Windows</button>
+      <button class="tab-btn"        onclick="showTab('linux',this)">Linux</button>
+    </div>
+
+    <div class="tab-panel active" id="tab-mac">
+      <ol>
+        <li>Unzip the download and drag <code>flextext-concat.app</code> to
+            Applications (or anywhere you like).</li>
+        <li>Double-click it. macOS will refuse to open it, or report that the
+            app is damaged (error &minus;47). This is Gatekeeper, not a real
+            problem with the file.</li>
+        <li>Open <strong>System Settings &rarr; Privacy &amp; Security</strong>,
+            scroll to the Security section, and click
+            <strong>Open Anyway</strong> next to the message about
+            flextext-concat.</li>
+        <li>Double-click the app again and confirm <strong>Open</strong>. It will
+            launch normally from then on.</li>
+      </ol>
+    </div>
+
+    <div class="tab-panel" id="tab-win">
+      <ol>
+        <li>Run <code>flextext-concat-windows-x86_64.exe</code>.</li>
+        <li>Windows SmartScreen will show &ldquo;Windows protected your
+            PC&rdquo;.</li>
+        <li>Click <strong>More info</strong>, then
+            <strong>Run anyway</strong>.</li>
+      </ol>
+      <div class="callout tip">
+        The single-file build unpacks itself on each launch, so the first start
+        takes a few seconds longer than later ones.
+      </div>
+    </div>
+
+    <div class="tab-panel" id="tab-linux">
+      <ol>
+        <li>Make the AppImage executable:
+            <pre><code>chmod +x flextext-concat-linux-amd64.AppImage</code></pre></li>
+        <li>Run it:
+            <pre><code>./flextext-concat-linux-amd64.AppImage</code></pre></li>
+      </ol>
+      <div class="callout tip">
+        If it will not start, your distro may need FUSE:
+        <code>sudo apt install libfuse2</code> on Debian/Ubuntu.
+      </div>
+    </div>
+  </div>
+
+  <!-- Interface -->
+  <h2 id="interface">The interface</h2>
+
+  <table>
+    <thead><tr><th>Control</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Load Folder&hellip;</strong></td>
+          <td>Replaces the list with every <code>.flextext</code> file in a
+              folder. With <strong>Include subfolders</strong> ticked it
+              searches the whole tree beneath it.</td></tr>
+      <tr><td><strong>Add Files&hellip;</strong></td>
+          <td>Adds individual files to the existing list.</td></tr>
+      <tr><td><strong>Drag and drop</strong></td>
+          <td>Drop files &mdash; or whole folders &mdash; onto the list from your
+              file manager.</td></tr>
+      <tr><td><strong>The file list</strong></td>
+          <td>Shows each file's name, the text's title, its phrase count, and
+              &#x1F50A; if it carries audio segmentation. Hover for the full
+              path. Drag rows to reorder; the list order is the order texts are
+              written.</td></tr>
+      <tr><td><strong>Remove Selected / Clear All</strong></td>
+          <td>Take files back out of the list. Shift+Click and Ctrl/Cmd+Click
+              select several at once.</td></tr>
+      <tr><td><strong>Combine as</strong></td>
+          <td>Corpus or Combined Text, with that mode's options below it.</td></tr>
+      <tr><td><strong>Output</strong></td>
+          <td>Where to write the result. Suggested for you when you load a
+              folder.</td></tr>
+      <tr><td><strong>Combine Files</strong></td>
+          <td>Runs the merge on a background thread, with a progress bar and a
+              Cancel button. Nothing is written if you cancel.</td></tr>
+      <tr><td><strong>Ctrl+Shift+D</strong></td>
+          <td>Shows a diagnostic panel: Python, Qt and PyYAML versions, and what
+              is currently loaded.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout tip">
+    A file that cannot be parsed is reported and left out of the list rather than
+    silently added, and the merge itself skips unreadable files and tells you
+    which. One bad file among fifty never loses the batch.
+  </div>
+
+  <!-- Sorting -->
+  <h2 id="sorting">Sorting</h2>
+
+  <p>The order of the list is the order the texts appear in the output, so
+  sorting matters. Drag rows by hand, or use one of the two sort modes.</p>
+
+  <h3>Simple sort</h3>
+  <p>Sort by filename (alphabetical or numerical), by the text's
+  <strong>title</strong> read from inside the file, or by date created, modified
+  or accessed. Numerical order treats digits as numbers, so
+  <code>text2</code> sorts before <code>text10</code>.</p>
+
+  <h3>Suffix Order</h3>
+  <p>Groups files that share a base name and orders them by a list of patterns
+  you supply &mdash; useful when you keep several dated exports of the same text.
+  Longer patterns are always tried first, so a specific pattern is never
+  shadowed by a shorter one it contains.</p>
+
+  <h3>Advanced (regex) sort</h3>
+  <p>Stack several regex layers. Layer 1 is the primary key; each lower layer
+  breaks ties within groups that are equal above it. Each layer has its own
+  capture group, sort-as mode (natural text, numeric, alphabetical) and
+  direction. Patterns are validated as you type.</p>
+
+  <div class="callout tip">
+    <strong>Save Settings&hellip;</strong> writes everything &mdash; sort setup and
+    both modes' options &mdash; to a commented YAML file you can edit by hand.
+    Loading applies each field independently, so one bad value never stops the
+    rest of the file from loading.
+  </div>
+
+  <!-- Audio -->
+  <h2 id="audio">Audio segmentation</h2>
+
+  <p>Some <code>.flextext</code> files carry timing: each phrase has
+  <code>begin-time-offset</code> and <code>end-time-offset</code> in
+  milliseconds, a <code>media-file</code> pointing at a
+  <code>&lt;media&gt;</code> entry, and sometimes a speaker name. Corpus mode
+  keeps all of it untouched. Combined mode offers two choices.</p>
+
+  <h3>Discard (default)</h3>
+  <p>All timing is removed. Offsets measured against separate recordings have no
+  meaning once the texts are merged, so leaving them in would be misleading.</p>
+
+  <h3>Shift onto one concatenated recording</h3>
+  <p>Instead of discarding the timing, each text's offsets are moved forward by
+  the total length of the texts before it, plus a gap. The result lines up with
+  the source audio joined end to end &mdash; so you can open the combined text
+  against the combined audio in ELAN.</p>
+
+  <p>The gap defaults to <strong>1005&nbsp;ms</strong>, which is exactly what the
+  companion <a href="https://sethj.github.io/concat/">Audio Concatenator</a>
+  inserts between files (500&nbsp;ms silence + 5&nbsp;ms click + 500&nbsp;ms
+  silence). Set it to 0 for plain gapless concatenation, or to whatever your own
+  joining process uses.</p>
+
+  <p>Naming the combined audio file writes a single <code>&lt;media&gt;</code>
+  entry that every phrase references &mdash; that link is what lets ELAN pair the
+  text with the audio.</p>
+
+  <div class="callout warn">
+    <strong>Durations are estimated, and that can drift.</strong> A
+    <code>.flextext</code> file does not record how long its recording is, so the
+    app uses the end of the last annotation. That is exact when a text is
+    annotated continuously from zero with no gaps. It is <em>not</em> exact for
+    ELAN-style annotation, which marks utterances and leaves silence unannotated:
+    if the recording keeps running after the final utterance, that trailing audio
+    is invisible, and every later text drifts early by the same amount &mdash;
+    cumulatively. The app names the texts this affects. Check the alignment before
+    relying on it.
+  </div>
+
+  <div class="callout tip">
+    Join the source audio in the <strong>same order</strong> as the file list.
+    Texts with no timing at all take up no room in the timeline, so they do not
+    shift anything.
+  </div>
+
+  <!-- segnum -->
+  <h2 id="segnum">A note on line numbers (segnum)</h2>
+
+  <p>Each source text numbers its own lines from 1, so combining several texts
+  raises the question of what the numbering should become. It matters less than
+  it looks.</p>
+
+  <p><strong>FLEx ignores <code>segnum</code> when importing.</strong> Its
+  importer contains an explicit no-op for it, because there is no field on a
+  segment to store it in &mdash; the value is written on export from the
+  reference FLEx computes for the screen. So whatever you choose here changes
+  nothing about how FLEx numbers the imported text.</p>
+
+  <table>
+    <thead><tr><th>Choice</th><th>When to use it</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Remove</strong> (default)</td>
+          <td>Let FLEx number the text itself. Leaves no stale numbering for
+              other tools to misread.</td></tr>
+      <tr><td><strong>Renumber continuously</strong></td>
+          <td>For tools other than FLEx that do read <code>segnum</code>. Lines
+              that have none are counted but not given one, so the sequence can
+              have gaps &mdash; you are told if that happens.</td></tr>
+      <tr><td><strong>Keep</strong></td>
+          <td>Leave each source text's original numbers, restarting at 1 per
+              paragraph.</td></tr>
+    </tbody>
+  </table>
+
+  <p><code>reference-label</code>, which FLEx <em>does</em> store, is never
+  touched by any of these.</p>
+
+  <!-- FAQ -->
+  <h2 id="faq">FAQ</h2>
+
+  <h3>Will this modify my original files?</h3>
+  <p>No. Every mode reads the sources and writes a new file. If a combined text
+  is not what you wanted, re-run in corpus mode.</p>
+
+  <h3>My text imports into FLEx completely blank.</h3>
+  <p>Almost always missing writing systems. A <code>.flextext</code> import will
+  not create them &mdash; the writing systems used by your texts must already
+  exist in the target project, and must be enabled in Interlinear Configuration
+  for the data to show.</p>
+
+  <h3>FLEx asks &ldquo;Duplicate text found&rdquo; over and over.</h3>
+  <p>FLEx matches on each text's GUID. Re-importing a corpus of texts you
+  exported before will prompt once per text, and the dialog does not say which
+  text it means. Tick <strong>Strip text GUIDs</strong> in corpus mode to import
+  everything as new texts instead. Combined mode always strips them, because it
+  is a new text by definition.</p>
+
+  <h3>Can I combine a file that already contains several texts?</h3>
+  <p>Yes. Corpus mode passes all of them through; combined mode gives each one
+  its own paragraph.</p>
+
+  <h3>What about morphemes and word analyses?</h3>
+  <p>They are copied through untouched. The app only ever removes or appends
+  within a phrase &mdash; it never rebuilds one &mdash; because interlinear items
+  appear both before and after the <code>&lt;words&gt;</code> element and
+  reordering them would corrupt the text.</p>
+
+  <h3>Do I need ffmpeg, or anything else installed?</h3>
+  <p>No. The downloads are self-contained. Running from source needs only
+  PySide6, plus PyYAML if you want to save and load settings.</p>
+
+  <h3>Can I use the merge engine without the GUI?</h3>
+  <p>Yes &mdash; <code>flextext.py</code> has no Qt dependency and can be imported
+  on its own or driven from a script.</p>
+
+  <footer>
+    <p>
+      <a href="https://github.com/rulingAnts/flextext_concat">Source on GitHub</a>
+      &ensp;&bull;&ensp;
+      GNU Affero General Public License v3.0
+      &ensp;&bull;&ensp;
+      Copyright 2026 Seth Johnston
+      &mdash; Built with assistance from
+      <a href="https://claude.ai">Claude</a> by Anthropic
+    </p>
+  </footer>
+
+</div><!-- .page -->
+
+<script>
+  /* Platform tabs */
+  function showTab(id, btn) {
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('tab-' + id).classList.add('active');
+    btn.classList.add('active');
+  }
+
+  /* Download cards - populated from the GitHub Releases API */
+  (async () => {
+    const REPO      = 'rulingAnts/flextext_concat';
+    const API_URL   = 'https://api.github.com/repos/' + REPO + '/releases/latest';
+    const CACHE_KEY = 'fc_latest_release';
+    const CACHE_TTL = 60 * 60 * 1000; // 1 hour
+
+    function fmtSize(bytes) {
+      return bytes >= 1e6
+        ? Math.round(bytes / 1e6) + ' MB'
+        : Math.round(bytes / 1e3) + ' KB';
+    }
+
+    function fmtDate(iso) {
+      return new Date(iso).toLocaleDateString('en-US',
+        { year: 'numeric', month: 'long', day: 'numeric' });
+    }
+
+    async function fetchRelease() {
+      try {
+        const cached = localStorage.getItem(CACHE_KEY);
+        if (cached) {
+          const { data, ts } = JSON.parse(cached);
+          if (Date.now() - ts < CACHE_TTL) return data;
+        }
+      } catch (_) {}
+      const r = await fetch(API_URL);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const data = await r.json();
+      try {
+        localStorage.setItem(CACHE_KEY, JSON.stringify({ data, ts: Date.now() }));
+      } catch (_) {}
+      return data;
+    }
+
+    function wireButton(btnId, metaId, asset) {
+      const btn  = document.getElementById(btnId);
+      const meta = document.getElementById(metaId);
+      btn.href        = asset.browser_download_url;
+      btn.textContent = 'Download  ' + fmtSize(asset.size);
+      btn.classList.remove('loading');
+      if (meta) meta.textContent = asset.name;
+    }
+
+    try {
+      const rel = await fetchRelease();
+
+      const mac   = rel.assets.find(a => a.name.includes('macos')   && a.name.endsWith('.zip'));
+      const win   = rel.assets.find(a => a.name.includes('windows') && a.name.endsWith('.exe'));
+      const linux = rel.assets.find(a => a.name.includes('linux')   && a.name.endsWith('.AppImage'));
+
+      if (mac)   wireButton('dl-mac',   'meta-mac',   mac);
+      if (win)   wireButton('dl-win',   'meta-win',   win);
+      if (linux) wireButton('dl-linux', 'meta-linux', linux);
+
+      document.getElementById('release-line').innerHTML =
+        'Latest release: <strong>' + rel.tag_name + '</strong>' +
+        ' &ensp;&bull;&ensp; Released ' + fmtDate(rel.published_at) +
+        ' &ensp;&bull;&ensp; ' +
+        '<a href="https://github.com/' + REPO + '/releases" target="_blank">All releases &rarr;</a>';
+
+    } catch (err) {
+      console.warn('Could not fetch release info:', err);
+      ['dl-mac', 'dl-win', 'dl-linux'].forEach(id => {
+        const btn = document.getElementById(id);
+        btn.textContent = 'Download';
+        btn.href = 'https://github.com/' + REPO + '/releases/latest';
+        btn.classList.remove('loading');
+      });
+      document.getElementById('release-line').innerHTML =
+        'Could not fetch release info automatically. &ensp;&bull;&ensp; ' +
+        '<a href="https://github.com/' + REPO + '/releases/latest" target="_blank">' +
+        'Go to latest release &rarr;</a>';
+    }
+  })();
+</script>
+
+</body>
+</html>
