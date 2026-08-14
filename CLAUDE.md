@@ -80,6 +80,26 @@ Verified against SIL's spec (Ken Zook, *Technical Notes on FLEx Text Interlinear
   ELAN-annotated) differing in indentation, attribute order, and whether `<media-files>`
   precedes or follows `<languages>`. Output is normalised to FLEx's ordering.
 
+## Open items
+
+- **Prune the Qt bundle.** The app imports only `QtCore`, `QtGui` and
+  `QtWidgets`, but PyInstaller's PySide6 hook is greedy: v0.1.0 ships 189.5 MB
+  (macOS), 79.3 MB (Linux AppImage), 47.8 MB (Windows). `QtWebEngineCore` alone
+  is 446 MB installed, plus libavcodec, QtOpenGL, QtPdf and QtQuick — none used.
+  Add `--exclude-module` flags to `.github/workflows/build.yml` and **launch the
+  built bundle to verify**, since over-excluding builds cleanly and crashes on
+  start. Seth flagged this as a courtesy to field users on limited bandwidth;
+  `audio_concat` needs the same treatment.
+- **`<media location=…>` convention is unsettled.** Seth wants to decide this
+  himself — do not pick one for him. Combined mode's shifted-offset output writes
+  whatever the user supplies. His corpus already mixes remote
+  `connect.flextext.app` URLs, absolute `file:///` URIs, and bare relative
+  filenames; only 1 of 6 resolved locally when checked. Same question applies to
+  FlexText Editor.
+- **Not yet verified by a human.** No one has run the GUI by hand, and no output
+  has been imported into FLEx — the one check that matters most, since FLEx's
+  import error reporting is poor.
+
 ## Sample data
 
 Read-only reference corpus (**never write to it**):
