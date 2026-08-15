@@ -23,6 +23,8 @@ class CombineResult:
         self.n_phrases = 0
         self.failures: list[tuple[Path, str]] = []
         self.warnings: list[str] = []
+        self.audio_file = ""
+        self.audio_ms = 0
 
     @property
     def n_skipped(self) -> int:
@@ -68,6 +70,52 @@ class CombineWorker(QObject):
         finally:
             self.finished.emit()
 
+    def _handle_audio(self, parsed: list[fx.FlextextFile],
+                      result: CombineResult) -> dict[str, int] | None:
+        """
+        Measure — and optionally join — the recordings matched to each text.
+
+        Returns {flextext path: duration_ms}, or None if the run should stop.
+        Joining and measuring happen in one pass so the durations are exactly
+        the lengths the files occupy in the output; measuring separately could
+        disagree after resampling.
+        """
+        import audio as au
+
+        pairs: dict = self.options.get("audio_paths") or {}
+        matched = [(str(f.path), pairs.get(str(f.path)))
+                   for f in parsed if pairs.get(str(f.path))]
+        if not matched:
+            return {}
+
+        if not self.options.get("join_audio"):
+            self.progress.emit(0, "Measuring recordings…")
+            durations, failures = au.probe_durations([a for _, a in matched])
+            result.failures += failures
+            return {flex: durations[aud] for flex, aud in matched
+                    if aud in durations}
+
+        output = self.options.get("media_location", "")
+        try:
+            lengths, actual_gap = au.join_audio(
+                [a for _, a in matched], output,
+                gap_ms=self.options.get("gap_ms", au.SEPARATOR_MS),
+                progress=lambda i, name: self.progress.emit(
+                    i, f"Joining audio: {name}…"),
+            )
+        except au.AudioError as exc:
+            self.error.emit(
+                f"The audio could not be joined, so nothing was written.\n\n"
+                f"{exc}"
+            )
+            return None
+
+        # Use the separator's rendered length, not its nominal one, so the
+        # offsets land exactly on the audio we just wrote.
+        self.options["gap_ms"] = actual_gap
+        result.audio_file = output
+        return {flex: length for (flex, _), length in zip(matched, lengths)}
+
     def _run(self) -> CombineResult | None:
         total = len(self.file_paths)
         if not total:
@@ -101,6 +149,15 @@ class CombineWorker(QObject):
             self.error.emit("Cancelled before writing. Nothing was written.")
             return None
 
+        durations: dict[str, int] = {}
+        if self.mode == "combined" and self.options.get("audio_mode") == fx.AUDIO_SHIFT:
+            durations = self._handle_audio(parsed, result)
+            if durations is None:
+                return None
+            if self._cancelled:
+                self.error.emit("Cancelled before writing. Nothing was written.")
+                return None
+
         self.progress.emit(total, "Building output…")
         if self.mode == "combined":
             tree, warnings = fx.build_combined(
@@ -113,6 +170,8 @@ class CombineWorker(QObject):
                 audio_mode=self.options.get("audio_mode", fx.AUDIO_DISCARD),
                 gap_ms=self.options.get("gap_ms", fx.DEFAULT_GAP_MS),
                 media_location=self.options.get("media_location", ""),
+                durations=durations,
+                distribute_untimed=self.options.get("distribute_untimed", True),
             )
         else:
             tree, warnings = fx.build_corpus(
@@ -128,6 +187,7 @@ class CombineWorker(QObject):
             return None
 
         root = tree.getroot()
+        result.audio_ms = sum(durations.values())
         result.n_texts = len(root.findall("interlinear-text"))
         result.n_paragraphs = len(root.findall(".//paragraph"))
         result.n_phrases = len(root.findall(".//phrase"))

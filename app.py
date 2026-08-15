@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QGroupBox,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -40,11 +41,15 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QSpinBox,
     QStackedWidget,
+    QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
+import audio
 import flextext as fx
+import matching
 from combiner import CombineWorker
 
 # ---------------------------------------------------------------------------
@@ -152,59 +157,6 @@ def _sorted_paths(paths: list[str], field: str, reverse: bool,
         return sorted(paths, key=lambda p: Path(p).stat().st_atime, reverse=reverse)
     return paths
 
-
-def _apply_suffix_order(paths: list[str], patterns: list[str]) -> list[str]:
-    """
-    Group files by base name, sort groups by natural key, sort within each
-    group by the pattern's rank in the user's list.
-
-    Longest patterns are tried first when matching so that a specific pattern
-    is never shadowed by a shorter one that is a substring of it, regardless
-    of their position in the user's list.
-    """
-    if not patterns:
-        return paths
-
-    # Compile; auto-escape anything that isn't valid regex.
-    compiled: list[tuple[int, int, re.Pattern]] = []
-    for rank, pat in enumerate(patterns):
-        try:
-            rx = re.compile(pat)
-        except re.error:
-            rx = re.compile(re.escape(pat))
-        compiled.append((rank, len(pat), rx))
-
-    # For matching: try longest pattern string first.
-    by_length = sorted(compiled, key=lambda x: x[1], reverse=True)
-
-    def classify(stem: str) -> tuple[str, int]:
-        """Return (base_name, suffix_rank) for a filename stem."""
-        for rank, _, rx in by_length:
-            m = rx.search(stem)
-            if m:
-                pre  = stem[:m.start()].rstrip("-_")
-                post = stem[m.end():].lstrip("-_")
-                base = pre + ("-" if pre and post else "") + post
-                return base, rank
-        # No pattern matched — use the full stem as the base key,
-        # rank beyond all named patterns so it sorts last in its group.
-        return stem, len(patterns)
-
-    groups: dict[str, list[tuple[int, str]]] = {}
-    for path in paths:
-        base, rank = classify(Path(path).stem)
-        if base not in groups:
-            groups[base] = []
-        groups[base].append((rank, path))
-
-    sorted_bases = sorted(groups.keys(), key=_natural_key)
-
-    # Within each group sort by suffix rank; ties keep original list order
-    # because Python's sort is stable.
-    result: list[str] = []
-    for base in sorted_bases:
-        result.extend(path for _, path in sorted(groups[base], key=lambda x: x[0]))
-    return result
 
 
 def _apply_single_regex_layer(paths: list[str], pattern: str, group: int,
@@ -361,92 +313,248 @@ class DraggableListWidget(QListWidget):
 
 
 # ---------------------------------------------------------------------------
+# Pairing table — texts on the left, their recordings on the right
+# ---------------------------------------------------------------------------
+
+class PairingTable(QTableWidget):
+    """
+    Two columns: the .flextext file, which keys the row, and the audio matched
+    to it.
+
+    The row order is the order texts are written and audio is joined, so the
+    two can never disagree.  Dragging in the left column moves whole rows,
+    keeping each text with its recording; dragging in the right column moves
+    just the audio, to correct a mismatched pairing.  Files dropped from the
+    desktop are routed by extension — audio onto the row it lands on, texts
+    appended to the list.
+    """
+
+    TEXT_COL = 0
+    AUDIO_COL = 1
+
+    texts_dropped = Signal(list)      # .flextext paths from an external drop
+    pairing_changed = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(0, 2, parent)
+        self.setHorizontalHeaderLabels(["Text (.flextext)", "Audio"])
+        self.verticalHeader().setVisible(False)
+        self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.setDragEnabled(True)
+        self.setAcceptDrops(True)
+        self.setDropIndicatorShown(True)
+        self.setDragDropMode(QAbstractItemView.DragDropMode.DragDrop)
+        self.setWordWrap(False)
+
+        header = self.horizontalHeader()
+        header.setSectionResizeMode(self.TEXT_COL, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(self.AUDIO_COL, QHeaderView.ResizeMode.Stretch)
+
+        self._drag_col = self.TEXT_COL
+        self.itemDoubleClicked.connect(self._on_double_click)
+
+    # ── Row data ─────────────────────────────────────────────────────────────
+
+    def text_path(self, row: int) -> str:
+        return self.item(row, self.TEXT_COL).data(Qt.ItemDataRole.UserRole)
+
+    def audio_path(self, row: int) -> str | None:
+        item = self.item(row, self.AUDIO_COL)
+        return item.data(Qt.ItemDataRole.UserRole) if item else None
+
+    def text_paths(self) -> list[str]:
+        return [self.text_path(r) for r in range(self.rowCount())]
+
+    def pairs(self) -> list[tuple[str, str | None]]:
+        return [(self.text_path(r), self.audio_path(r))
+                for r in range(self.rowCount())]
+
+    def set_rows(self, rows: list[tuple[str, str | None, str | None]],
+                 labels: dict[str, str] | None = None):
+        """rows = [(text_path, audio_path, confidence)]."""
+        labels = labels or {}
+        self.setRowCount(0)
+        for text_path, audio_path, confidence in rows:
+            self._append(text_path, audio_path, confidence, labels)
+        self.pairing_changed.emit()
+
+    def _append(self, text_path, audio_path, confidence, labels):
+        row = self.rowCount()
+        self.insertRow(row)
+
+        left = QTableWidgetItem(labels.get(text_path) or Path(text_path).name)
+        left.setData(Qt.ItemDataRole.UserRole, text_path)
+        left.setToolTip(text_path)
+        self.setItem(row, self.TEXT_COL, left)
+        self.set_audio(row, audio_path, confidence)
+
+    def set_audio(self, row: int, audio_path: str | None,
+                  confidence: str | None = None):
+        if audio_path:
+            label = Path(audio_path).name
+            tip = audio_path
+            if confidence == matching.BY_FOLDER:
+                # Named differently from the text; only the folder relates them,
+                # so mark it for the user to confirm rather than trust silently.
+                label = "? " + label
+                tip = ("Matched because it sits in the same folder as the "
+                       f"text, not by name — please check.\n\n{audio_path}")
+        else:
+            label, tip = "— none —", "Double-click to choose an audio file."
+
+        item = QTableWidgetItem(label)
+        item.setData(Qt.ItemDataRole.UserRole, audio_path)
+        item.setData(Qt.ItemDataRole.UserRole + 1, confidence)
+        item.setToolTip(tip)
+        if not audio_path:
+            item.setForeground(Qt.GlobalColor.gray)
+        self.setItem(row, self.AUDIO_COL, item)
+
+    def clear_audio(self, rows):
+        for row in rows:
+            self.set_audio(row, None)
+        self.pairing_changed.emit()
+
+    def selected_rows(self) -> list[int]:
+        return sorted({i.row() for i in self.selectedIndexes()})
+
+    # ── Interaction ──────────────────────────────────────────────────────────
+
+    def _on_double_click(self, item):
+        if item.column() != self.AUDIO_COL:
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Choose the audio for this text", "",
+            "Audio files (*" + " *".join(sorted(audio.AUDIO_EXTENSIONS))
+            + ");;All files (*)",
+        )
+        if path:
+            self.set_audio(item.row(), path)
+            self.pairing_changed.emit()
+
+    def mousePressEvent(self, event):
+        index = self.indexAt(event.position().toPoint())
+        if index.isValid():
+            self._drag_col = index.column()
+        super().mousePressEvent(event)
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+            return
+        super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+            return
+        super().dragMoveEvent(event)
+
+    def dropEvent(self, event):
+        if event.mimeData().hasUrls():
+            self._drop_external(event)
+            return
+        if event.source() is not self:
+            event.ignore()
+            return
+        if self._drag_col == self.AUDIO_COL:
+            self._drop_audio(event)
+        else:
+            self._drop_rows(event)
+
+    def _target_row(self, event) -> int:
+        index = self.indexAt(event.position().toPoint())
+        if not index.isValid():
+            return self.rowCount()
+        row = index.row()
+        if (self.dropIndicatorPosition()
+                == QAbstractItemView.DropIndicatorPosition.BelowItem):
+            row += 1
+        return row
+
+    def _drop_external(self, event):
+        """Audio lands on the row under the cursor; texts join the list."""
+        paths = [u.toLocalFile() for u in event.mimeData().urls() if u.isLocalFile()]
+        sounds = [p for p in paths
+                  if Path(p).suffix.lower() in audio.AUDIO_EXTENSIONS]
+        others = [p for p in paths if p not in sounds]
+
+        index = self.indexAt(event.position().toPoint())
+        if sounds and index.isValid():
+            for offset, path in enumerate(sounds):
+                row = index.row() + offset
+                if row < self.rowCount():
+                    self.set_audio(row, path)
+            self.pairing_changed.emit()
+        elif sounds:
+            others += sounds          # dropped past the last row: treat as files
+
+        if others:
+            self.texts_dropped.emit(others)
+        event.acceptProposedAction()
+
+    def _drop_audio(self, event):
+        """Move an audio assignment from one row to another."""
+        source_rows = self.selected_rows()
+        target = min(self._target_row(event), self.rowCount() - 1)
+        if not source_rows or target < 0:
+            event.ignore()
+            return
+        row = source_rows[0]
+        if row == target:
+            event.ignore()
+            return
+        item = self.item(row, self.AUDIO_COL)
+        path = item.data(Qt.ItemDataRole.UserRole)
+        confidence = item.data(Qt.ItemDataRole.UserRole + 1)
+        self.set_audio(target, path, confidence)
+        self.set_audio(row, None)
+        self.pairing_changed.emit()
+        event.accept()
+
+    def _drop_rows(self, event):
+        """Move whole rows, so each text keeps its recording."""
+        source_rows = self.selected_rows()
+        if not source_rows:
+            event.ignore()
+            return
+        target = self._target_row(event)
+        captured = [
+            (self.item(r, self.TEXT_COL).text(), self.text_path(r),
+             self.audio_path(r),
+             self.item(r, self.AUDIO_COL).data(Qt.ItemDataRole.UserRole + 1))
+            for r in source_rows
+        ]
+        above = sum(1 for r in source_rows if r < target)
+        target -= above
+
+        for r in reversed(source_rows):
+            self.removeRow(r)
+        for offset, (label, text_path, audio_path, confidence) in enumerate(captured):
+            row = target + offset
+            self.insertRow(row)
+            left = QTableWidgetItem(label)
+            left.setData(Qt.ItemDataRole.UserRole, text_path)
+            left.setToolTip(text_path)
+            self.setItem(row, self.TEXT_COL, left)
+            self.set_audio(row, audio_path, confidence)
+
+        self.clearSelection()
+        for offset in range(len(captured)):
+            self.selectRow(target + offset)
+        self.pairing_changed.emit()
+        event.accept()
+
+
+# ---------------------------------------------------------------------------
 # Simple (GUI) sort panel
 # ---------------------------------------------------------------------------
 
-class SuffixOrderWidget(QGroupBox):
-    """Sub-sort by ordered suffix patterns, for systematically named exports."""
-
-    _HELP = (
-        "Add substrings or regex patterns that appear in your filenames.\n\n"
-        "Files that share the same base name (the filename with the matched\n"
-        "pattern removed) are grouped together and ordered by this list.\n\n"
-        "MATCHING RULE — longer patterns are always tried first, regardless\n"
-        "of their position in the list. This prevents a short pattern from\n"
-        "accidentally matching inside a longer one.\n\n"
-        "EXAMPLE — several dated exports of the same text:\n"
-        "  Tosokai 2026-07-20-1803.flextext\n"
-        "  Tosokai 2026-07-23-1218.flextext\n"
-        "Add a pattern like  \\d{4}-\\d{2}-\\d{2}-\\d{4}  to group them.\n\n"
-        "Drag entries to reorder their priority within matched groups."
-    )
-
-    def __init__(self, parent=None):
-        super().__init__("Suffix Order", parent)
-        layout = QVBoxLayout(self)
-        layout.setSpacing(4)
-
-        self.pattern_list = DraggableListWidget()
-        self.pattern_list.setMaximumHeight(110)
-        layout.addWidget(self.pattern_list)
-
-        row = QHBoxLayout()
-        self.add_input = QLineEdit()
-        self.add_input.setPlaceholderText("Substring or regex pattern…")
-        self.add_input.returnPressed.connect(self._add)
-        add_btn = QPushButton("Add")
-        add_btn.clicked.connect(self._add)
-        remove_btn = QPushButton("Remove")
-        remove_btn.clicked.connect(self._remove_selected)
-        help_btn = QPushButton("?")
-        help_btn.setFixedWidth(28)
-        help_btn.setToolTip(self._HELP)
-        help_btn.clicked.connect(
-            lambda: QMessageBox.information(self, "Suffix Order Help", self._HELP)
-        )
-        row.addWidget(self.add_input, 1)
-        row.addWidget(add_btn)
-        row.addWidget(remove_btn)
-        row.addWidget(help_btn)
-        layout.addLayout(row)
-
-        self.apply_btn = QPushButton("Apply Suffix Order")
-        layout.addWidget(self.apply_btn)
-
-    def patterns(self) -> list[str]:
-        return [self.pattern_list.item(i).text()
-                for i in range(self.pattern_list.count())]
-
-    def set_patterns(self, patterns: list[str]):
-        self.pattern_list.clear()
-        for p in patterns:
-            self.pattern_list.addItem(p)
-
-    def _add(self):
-        text = self.add_input.text().strip()
-        if not text:
-            return
-        try:
-            re.compile(text)
-            display = text
-        except re.error:
-            escaped = re.escape(text)
-            QMessageBox.information(
-                self, "Auto-escaped",
-                f"'{text}' is not a valid regex pattern.\n\n"
-                f"It has been added as a literal string (auto-escaped to '{escaped}').",
-            )
-            display = escaped
-        self.pattern_list.addItem(display)
-        self.add_input.clear()
-
-    def _remove_selected(self):
-        for item in reversed(self.pattern_list.selectedItems()):
-            self.pattern_list.takeItem(self.pattern_list.row(item))
-
 
 class GuiSortPanel(QWidget):
-    """The Simple sort panel: standard sort fields + optional suffix order."""
+    """The Simple sort panel: sort field and direction."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -468,9 +576,6 @@ class GuiSortPanel(QWidget):
         sort_row.addWidget(self.apply_sort_btn)
         sort_row.addStretch()
         layout.addLayout(sort_row)
-
-        self.suffix_widget = SuffixOrderWidget()
-        layout.addWidget(self.suffix_widget)
 
     @property
     def sort_field(self) -> str:
@@ -798,16 +903,46 @@ class CombinedOptionsPanel(QWidget):
         gap_row.addStretch()
         shift_layout.addLayout(gap_row)
 
+        self.join_audio_cb = QCheckBox(
+            "Join the matched recordings into one audio file")
+        self.join_audio_cb.setChecked(True)
+        self.join_audio_cb.setToolTip(
+            "Writes the combined audio alongside the combined text, in the same\n"
+            "order, so the two cannot disagree. Each recording's true length is\n"
+            "measured while joining, which makes the shifted offsets exact\n"
+            "instead of estimated.\n\n"
+            "Turn this off to combine the text only — offsets are then estimated\n"
+            "from each text's last annotation."
+        )
+        self.join_audio_cb.toggled.connect(self._on_join_audio_toggled)
+        shift_layout.addWidget(self.join_audio_cb)
+
+        self.distribute_cb = QCheckBox(
+            "Spread lines evenly across texts that have audio but no segmentation")
+        self.distribute_cb.setChecked(True)
+        self.distribute_cb.setToolTip(
+            "ELAN cannot show an annotation without a time slot, so a text with\n"
+            "a recording but no segmentation would be unusable there.\n"
+            "Its lines are given even slices of its recording — approximate\n"
+            "timing that does not follow the speech, reported in the summary.\n\n"
+            "Either way the timeline still advances by that recording's full\n"
+            "length, so the texts after it stay aligned."
+        )
+        shift_layout.addWidget(self.distribute_cb)
+
         media_row = QHBoxLayout()
-        media_row.addWidget(QLabel("Combined audio:"))
+        self.media_label = QLabel("Combined audio:")
+        media_row.addWidget(self.media_label)
         self.media_edit = QLineEdit()
         self.media_edit.setPlaceholderText(
-            "Path or URL of the joined recording (optional)…")
+            "Where to write the joined recording…")
         self.media_edit.setToolTip(
             "The single audio file the shifted offsets point into.\n"
             "Written as one <media> entry that every phrase references, which\n"
             "is what lets ELAN open the text against the audio.\n\n"
-            "Leave empty to shift the offsets without linking any media."
+            "When joining, this is where the audio is written. When not "
+            "joining,\nit is just the path recorded in the text — leave it "
+            "empty to shift\noffsets without linking any media."
         )
         media_browse = QPushButton("Browse…")
         media_browse.clicked.connect(self._browse_media)
@@ -875,6 +1010,7 @@ class CombinedOptionsPanel(QWidget):
         layout.addStretch()
 
         self._on_audio_mode_changed()
+        self._on_join_audio_toggled(self.join_audio_cb.isChecked())
 
     # ── Audio segmentation ───────────────────────────────────────────────────
 
@@ -911,7 +1047,23 @@ class CombinedOptionsPanel(QWidget):
             )
             self.audio_note.setStyleSheet(_WARN_STYLE)
 
+    def _on_join_audio_toggled(self, joining: bool):
+        self.distribute_cb.setEnabled(joining)
+        self.media_label.setText(
+            "Write joined audio to:" if joining else "Combined audio:")
+        self.media_edit.setPlaceholderText(
+            "Where to write the joined recording…" if joining
+            else "Path or URL of the joined recording (optional)…")
+
     def _browse_media(self):
+        if self.join_audio_cb.isChecked():
+            path, _ = QFileDialog.getSaveFileName(
+                self, "Write the joined audio to", "", "WAV files (*.wav)")
+            if path and not path.lower().endswith(".wav"):
+                path += ".wav"
+            if path:
+                self.media_edit.setText(path)
+            return
         path, _ = QFileDialog.getOpenFileName(
             self, "Select the combined audio file", "",
             "Audio files (*.wav *.mp3 *.m4a *.flac *.ogg *.aif *.aiff);;All files (*)",
@@ -959,6 +1111,8 @@ _BOOL_SETTINGS = [
     ("strip_guids",       "corpus_panel.strip_guids_cb",    "corpus mode: import as new texts"),
     ("add_title_notes",   "combined_panel.title_notes_cb",  "combined mode: source title as a note"),
     ("strip_audio_notes", "combined_panel.strip_notes_cb",  "combined mode: drop audio timestamp notes"),
+    ("join_audio",        "combined_panel.join_audio_cb",   "shift mode: also write the joined recording"),
+    ("distribute_untimed", "combined_panel.distribute_cb",  "shift mode: even slices for unsegmented texts"),
 ]
 
 
@@ -1018,21 +1172,6 @@ def _build_settings_yaml(settings: dict) -> str:
         f"warn_audio_loss: {str(settings['warn_audio_loss']).lower()}"
         "  # true | false — confirm before combined mode discards audio data",
         "",
-        "suffix_order:  # substrings or regex patterns that identify file suffixes;",
-        "               # one pattern per line — delete all entries (or write []) to disable.",
-        "               # Longer patterns are always tried first, so a specific pattern",
-        "               # is never shadowed by a shorter one it contains.",
-    ]
-
-    suffix = settings.get("suffix_order") or []
-    if suffix:
-        for p in suffix:
-            lines.append(f"  - {_ys(p)}")
-    else:
-        lines.append("  []")
-
-    lines += [
-        "",
         "regex_layers:  # Advanced sort only — list of sort layers.",
         "               # Layer 1 (top) is the primary sort key; lower layers break ties.",
         "               # Delete all entries (or write []) when using Simple (GUI) sort.",
@@ -1072,6 +1211,9 @@ class MainWindow(QMainWindow):
         # audio-loss warning.  Populated whenever files are added.
         self._info: dict[str, fx.FlextextFile] = {}
         self._warn_audio_loss = True
+        # Empty means "look beside each text", which is how these corpora are
+        # normally laid out; set only when the audio lives somewhere else.
+        self._audio_folder = ""
         self._build_ui()
 
     # ── Construction ─────────────────────────────────────────────────────────
@@ -1103,12 +1245,43 @@ class MainWindow(QMainWindow):
         load_row.addWidget(self.folder_label, 1)
         root.addLayout(load_row)
 
-        # ── File list ────────────────────────────────────────────────────────
-        self.file_list = DraggableListWidget(accept_external=True)
-        self.file_list.files_dropped.connect(self._on_files_dropped)
-        self.file_list.setToolTip(
-            "Drag files here from your file manager, or drag rows to reorder.")
-        root.addWidget(self.file_list, 1)
+        # ── Audio folder row ─────────────────────────────────────────────────
+        audio_row = QHBoxLayout()
+        self.audio_folder_btn = QPushButton("Audio Folder…")
+        self.audio_folder_btn.setToolTip(
+            "Where to look for recordings. By default this is the same folder "
+            "as the texts —\nset it only if your audio lives somewhere else.")
+        self.audio_folder_btn.clicked.connect(self._on_choose_audio_folder)
+        self.audio_folder_label = QLabel("Audio: same folder as the texts")
+        self.audio_folder_label.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.rematch_btn = QPushButton("Match Audio")
+        self.rematch_btn.setToolTip(
+            "Suggest a recording for every text, by filename and then by "
+            "folder.\nSuggestions made on folder alone are marked '?' — check "
+            "those.")
+        self.rematch_btn.clicked.connect(self._on_rematch)
+        self.clear_audio_btn = QPushButton("Clear Audio")
+        self.clear_audio_btn.setToolTip(
+            "Unassign the audio from the selected rows.")
+        self.clear_audio_btn.clicked.connect(self._on_clear_audio)
+        audio_row.addWidget(self.audio_folder_btn)
+        audio_row.addWidget(self.audio_folder_label, 1)
+        audio_row.addWidget(self.rematch_btn)
+        audio_row.addWidget(self.clear_audio_btn)
+        root.addLayout(audio_row)
+
+        # ── Pairing table ────────────────────────────────────────────────────
+        self.table = PairingTable()
+        self.table.texts_dropped.connect(self._on_files_dropped)
+        self.table.pairing_changed.connect(self._refresh_counts)
+        self.table.setToolTip(
+            "Drag files here from your file manager.\n"
+            "Drag in the left column to reorder texts (the audio follows).\n"
+            "Drag in the right column to move a recording to another text.\n"
+            "Double-click a recording to pick a different file."
+        )
+        root.addWidget(self.table, 1)
 
         list_btns = QHBoxLayout()
         remove_btn = QPushButton("Remove Selected")
@@ -1150,8 +1323,6 @@ class MainWindow(QMainWindow):
 
         self.gui_panel = GuiSortPanel()
         self.gui_panel.apply_sort_btn.clicked.connect(self._on_apply_sort)
-        self.gui_panel.suffix_widget.apply_btn.clicked.connect(
-            self._on_apply_suffix_order)
         self._sort_stack.addWidget(self.gui_panel)    # index 0
 
         self.regex_panel = RegexSortPanel()
@@ -1213,6 +1384,10 @@ class MainWindow(QMainWindow):
         run_row.addWidget(self.combine_btn)
         root.addLayout(run_row)
 
+        # Establish the corpus/combined enabled-state; setChecked() during
+        # construction fires no toggle, so the initial pass is explicit.
+        self._on_output_mode_toggle(self._out_group.checkedId(), True)
+
         self.statusBar().showMessage("Ready")
 
         # Ctrl+Shift+D (⌘+Shift+D on macOS) → environment diagnostic
@@ -1253,7 +1428,6 @@ class MainWindow(QMainWindow):
             "gap_ms":              self.combined_panel.gap_spin.value(),
             "combined_media":      self.combined_panel.media_edit.text().strip(),
             "warn_audio_loss":     self._warn_audio_loss,
-            "suffix_order":        self.gui_panel.suffix_widget.patterns(),
             "regex_layers":        layers_out,
         }
         for key, widget_path, _ in _BOOL_SETTINGS:
@@ -1378,17 +1552,6 @@ class MainWindow(QMainWindow):
             else:
                 warnings.append(
                     f"warn_audio_loss: expected true or false, got '{warn}'. Skipped.")
-
-        # ── suffix_order ─────────────────────────────────────────────────────
-        suffix = data.get("suffix_order")
-        if suffix is not None:
-            if isinstance(suffix, list):
-                self.gui_panel.suffix_widget.set_patterns([str(p) for p in suffix])
-            else:
-                warnings.append(
-                    f"suffix_order: expected a list of strings, "
-                    f"got {type(suffix).__name__}. Skipped."
-                )
 
         # ── regex_layers ─────────────────────────────────────────────────────
         layers = data.get("regex_layers")
@@ -1519,35 +1682,81 @@ class MainWindow(QMainWindow):
     # ── File list plumbing ───────────────────────────────────────────────────
 
     def _current_paths(self) -> list[str]:
-        return [
-            self.file_list.item(i).data(Qt.ItemDataRole.UserRole)
-            for i in range(self.file_list.count())
-        ]
+        return self.table.text_paths()
 
     def _titles(self) -> dict[str, str]:
         return {p: info.title for p, info in self._info.items() if info.title}
 
+    def _labels(self) -> dict[str, str]:
+        return {p: info.label for p, info in self._info.items()}
+
     def _set_paths(self, paths: list[str]):
-        self.file_list.clear()
-        for path in paths:
-            info = self._info.get(path)
-            item = QListWidgetItem(info.label if info else Path(path).name)
-            item.setData(Qt.ItemDataRole.UserRole, path)
-            item.setToolTip(path)
-            self.file_list.addItem(item)
-        self._refresh_counts()
+        """Reorder or replace the rows, keeping each text's audio with it."""
+        existing = dict(self.table.pairs())
+        confidence = {
+            self.table.text_path(r):
+                self.table.item(r, PairingTable.AUDIO_COL)
+                    .data(Qt.ItemDataRole.UserRole + 1)
+            for r in range(self.table.rowCount())
+        }
+        self.table.set_rows(
+            [(p, existing.get(p), confidence.get(p)) for p in paths],
+            self._labels(),
+        )
 
     def _refresh_counts(self):
-        n = self.file_list.count()
-        infos = [self._info[p] for p in self._current_paths() if p in self._info]
+        rows = self.table.pairs()
+        infos = [self._info[p] for p, _ in rows if p in self._info]
         phrases = sum(i.n_phrases for i in infos)
         texts = sum(len(i.texts) for i in infos)
+        with_audio = sum(1 for _, a in rows if a)
         self.count_label.setText(
-            f"{n} file(s) · {texts} text(s) · {phrases} phrase(s)" if n else ""
+            f"{len(rows)} file(s) · {texts} text(s) · {phrases} phrase(s) · "
+            f"{with_audio} with audio" if rows else ""
         )
         self.combined_panel.set_languages(
             fx.collect_languages(infos), fx.default_title_lang(infos)
         )
+
+    def _audio_pool(self) -> list[str]:
+        """Every candidate recording, from the audio folder or beside the texts."""
+        roots: list[Path] = []
+        if self._audio_folder:
+            roots.append(Path(self._audio_folder))
+        else:
+            roots += [Path(p).parent for p in self._current_paths()]
+
+        recursive = self.recursive_cb.isChecked()
+        found: list[str] = []
+        seen: set[str] = set()
+        for root in roots:
+            if not root.is_dir():
+                continue
+            walker = root.rglob("*") if recursive else root.iterdir()
+            for path in walker:
+                key = str(path)
+                if (key not in seen and path.is_file()
+                        and path.suffix.lower() in audio.AUDIO_EXTENSIONS):
+                    seen.add(key)
+                    found.append(key)
+        return sorted(found)
+
+    def _automatch(self, paths: list[str]):
+        """Suggest audio for the given texts, leaving manual choices alone."""
+        pool = self._audio_pool()
+        if not pool:
+            return 0
+        suggestions = matching.match_audio(paths, pool, with_confidence=True)
+        matched = 0
+        for row in range(self.table.rowCount()):
+            text_path = self.table.text_path(row)
+            if text_path not in suggestions or self.table.audio_path(row):
+                continue
+            found, confidence = suggestions[text_path]
+            if found:
+                self.table.set_audio(row, found, confidence)
+                matched += 1
+        return matched
 
     def _add_paths(self, new_paths: list[str], *, replace: bool = False):
         """
@@ -1556,18 +1765,23 @@ class MainWindow(QMainWindow):
         Files that cannot be parsed are reported and left out rather than
         silently added, so the list only ever contains usable texts.
         """
-        existing = [] if replace else self._current_paths()
+        existing = self.table.pairs() if not replace else []
         if replace:
             self._info.clear()
 
-        seen = set(existing)
+        seen = {p for p, _ in existing}
         to_parse = [p for p in new_paths if p not in seen]
         parsed, failures = fx.parse_files(to_parse)
         for info in parsed:
             self._info[str(info.path)] = info
 
         added = [str(i.path) for i in parsed]
-        self._set_paths(existing + added)
+        self.table.set_rows(
+            [(p, a, None) for p, a in existing] + [(p, None, None) for p in added],
+            self._labels(),
+        )
+        self._automatch(added)
+        self._refresh_counts()
 
         if failures:
             shown = "\n".join(f"  • {p.name}: {m}" for p, m in failures[:10])
@@ -1595,7 +1809,7 @@ class MainWindow(QMainWindow):
             f"ElementTree: {ET.VERSION}",
             f"PyYAML:   {'installed' if _HAS_YAML else 'NOT installed'}",
             "",
-            f"Files loaded: {self.file_list.count()}",
+            f"Files loaded: {self.table.rowCount()}",
             f"Texts:        {sum(len(i.texts) for i in self._info.values())}",
             f"With audio:   {fx.audio_loss_summary(list(self._info.values()))[0]}",
         ]
@@ -1610,6 +1824,15 @@ class MainWindow(QMainWindow):
         if checked:
             self._out_stack.setCurrentIndex(btn_id)
             self._retarget_output_suffix()
+            # Corpus mode passes every text through verbatim: no audio is
+            # joined, no offsets are shifted, nothing is synthesized. The
+            # pairing controls would do nothing, so they are disabled rather
+            # than left looking live.
+            combining = self._output_mode() == "combined"
+            for widget in (self.audio_folder_btn, self.rematch_btn,
+                           self.clear_audio_btn):
+                widget.setEnabled(combining)
+            self.table.setColumnHidden(PairingTable.AUDIO_COL, not combining)
 
     def _output_mode(self) -> str:
         return "combined" if self._radio_combined.isChecked() else "corpus"
@@ -1684,21 +1907,68 @@ class MainWindow(QMainWindow):
         added, _ = self._add_paths(collected)
         self.statusBar().showMessage(f"Added {len(added)} file(s).")
 
+    def _on_choose_audio_folder(self):
+        folder = QFileDialog.getExistingDirectory(
+            self, "Folder containing the recordings (Cancel to use each text's own folder)")
+        self._audio_folder = folder
+        self.audio_folder_label.setText(
+            f"Audio: {folder}" if folder else "Audio: same folder as the texts")
+        if self.table.rowCount():
+            self._on_rematch()
+
+    def _on_rematch(self):
+        """Re-suggest audio for every row, including ones already assigned."""
+        if self.table.rowCount() == 0:
+            QMessageBox.information(
+                self, "No texts", "Load some .flextext files first.")
+            return
+        pool = self._audio_pool()
+        if not pool:
+            where = self._audio_folder or "the texts' own folders"
+            QMessageBox.information(
+                self, "No audio found",
+                f"No audio files were found in {where}.\n\n"
+                "Choose an audio folder, or turn on 'Include subfolders'.",
+            )
+            return
+
+        for row in range(self.table.rowCount()):
+            self.table.set_audio(row, None)
+        matched = self._automatch(self.table.text_paths())
+        self._refresh_counts()
+
+        weak = sum(
+            1 for r in range(self.table.rowCount())
+            if self.table.item(r, PairingTable.AUDIO_COL)
+                   .data(Qt.ItemDataRole.UserRole + 1) == matching.BY_FOLDER
+        )
+        note = (f"  {weak} matched on folder alone (marked ?) — please check."
+                if weak else "")
+        self.statusBar().showMessage(
+            f"Matched {matched} of {self.table.rowCount()} text(s) "
+            f"from {len(pool)} recording(s).{note}"
+        )
+
+    def _on_clear_audio(self):
+        rows = self.table.selected_rows() or range(self.table.rowCount())
+        self.table.clear_audio(list(rows))
+        self.statusBar().showMessage("Audio unassigned.")
+
     def _on_remove_selected(self):
-        for item in reversed(self.file_list.selectedItems()):
-            self._info.pop(item.data(Qt.ItemDataRole.UserRole), None)
-            self.file_list.takeItem(self.file_list.row(item))
+        for row in reversed(self.table.selected_rows()):
+            self._info.pop(self.table.text_path(row), None)
+            self.table.removeRow(row)
         self._refresh_counts()
 
     def _on_clear(self):
-        self.file_list.clear()
+        self.table.setRowCount(0)
         self._info.clear()
         self.folder_label.setText("No files loaded")
         self._refresh_counts()
         self.statusBar().showMessage("Cleared.")
 
     def _on_apply_sort(self):
-        if self.file_list.count() == 0:
+        if self.table.rowCount() == 0:
             return
         self._set_paths(
             _sorted_paths(
@@ -1709,17 +1979,6 @@ class MainWindow(QMainWindow):
             )
         )
         self.statusBar().showMessage("Sort applied.")
-
-    def _on_apply_suffix_order(self):
-        patterns = self.gui_panel.suffix_widget.patterns()
-        if not patterns:
-            QMessageBox.information(
-                self, "No patterns", "Add at least one pattern first.")
-            return
-        if self.file_list.count() == 0:
-            return
-        self._set_paths(_apply_suffix_order(self._current_paths(), patterns))
-        self.statusBar().showMessage("Suffix order applied.")
 
     def _on_apply_regex_sort(self):
         layers = self.regex_panel.get_layers()
@@ -1737,7 +1996,7 @@ class MainWindow(QMainWindow):
                     f"Pattern: {layer['pattern']!r}\nError: {exc}",
                 )
                 return
-        if self.file_list.count() == 0:
+        if self.table.rowCount() == 0:
             return
         self._set_paths(_apply_multilayer_regex_sort(self._current_paths(), active))
         n = len(active)
@@ -1814,8 +2073,62 @@ class MainWindow(QMainWindow):
             return "corpus"
         return None
 
+    def _confirm_unmatched(self) -> bool:
+        """
+        Ask before combining when some texts have no recording, or when one
+        recording is used twice.
+
+        Both are legitimate — a text may simply have no audio — but both change
+        the timeline, so they should be a decision rather than a surprise.
+        """
+        rows = self.table.pairs()
+        unmatched = [Path(p).name for p, a in rows if not a]
+
+        used: dict[str, list[str]] = {}
+        for text_path, audio_path in rows:
+            if audio_path:
+                used.setdefault(audio_path, []).append(Path(text_path).name)
+        duplicates = {a: names for a, names in used.items() if len(names) > 1}
+
+        if not unmatched and not duplicates:
+            return True
+
+        parts: list[str] = []
+        if unmatched:
+            shown = "\n".join(f"  • {n}" for n in unmatched[:8])
+            more = (f"\n  …and {len(unmatched) - 8} more"
+                    if len(unmatched) > 8 else "")
+            parts.append(
+                f"{len(unmatched)} text(s) have no recording:\n{shown}{more}\n\n"
+                "Their lines will carry no timing, and they will take up no "
+                "room in the joined audio."
+            )
+        if duplicates:
+            shown = "\n".join(
+                f"  • {Path(a).name} → {', '.join(n[:40] for n in names)}"
+                for a, names in list(duplicates.items())[:5]
+            )
+            parts.append(
+                f"{len(duplicates)} recording(s) are used by more than one "
+                f"text:\n{shown}\n\n"
+                "That audio will be joined once per text, so the timeline will "
+                "contain it several times. If these are different exports of "
+                "the same text, keep only one."
+            )
+
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("Check the pairing")
+        box.setText("<b>Some texts are not paired one-to-one with audio.</b>")
+        box.setInformativeText("\n\n".join(parts))
+        go = box.addButton("Combine anyway", QMessageBox.ButtonRole.AcceptRole)
+        cancel = box.addButton(QMessageBox.StandardButton.Cancel)
+        box.setDefaultButton(cancel)
+        box.exec()
+        return box.clickedButton() is go
+
     def _on_combine(self):
-        if self.file_list.count() == 0:
+        if self.table.rowCount() == 0:
             QMessageBox.warning(
                 self, "No files", "Load or add some .flextext files first.")
             return
@@ -1861,7 +2174,21 @@ class MainWindow(QMainWindow):
                 "audio_mode": self.combined_panel.audio_mode,
                 "gap_ms": self.combined_panel.gap_spin.value(),
                 "media_location": self.combined_panel.media_edit.text().strip(),
+                "distribute_untimed": self.combined_panel.distribute_cb.isChecked(),
             }
+            if self.combined_panel.audio_mode == fx.AUDIO_SHIFT:
+                options["audio_paths"] = dict(self.table.pairs())
+                options["join_audio"] = self.combined_panel.join_audio_cb.isChecked()
+                if options["join_audio"] and not options["media_location"]:
+                    QMessageBox.warning(
+                        self, "No audio output path",
+                        "Choose where to write the joined audio, or turn off "
+                        "'Join the matched recordings into one audio file'.",
+                    )
+                    return
+                if not self._confirm_unmatched():
+                    self.statusBar().showMessage("Cancelled.")
+                    return
         else:
             options = {"strip_guids": self.corpus_panel.strip_guids_cb.isChecked()}
 
@@ -1913,11 +2240,19 @@ class MainWindow(QMainWindow):
         ]
         if self._output_mode() == "combined":
             if self.combined_panel.audio_mode == fx.AUDIO_SHIFT:
-                lines.append(
-                    "\nTime offsets were shifted onto one concatenated "
-                    "timeline. Join the source audio in the same order for "
-                    "them to line up."
-                )
+                if getattr(result, "audio_file", ""):
+                    lines.append(
+                        f"\nJoined audio written to:\n{result.audio_file}\n"
+                        f"({result.audio_ms / 1000:.1f}s of recordings). The "
+                        f"offsets were measured from these files, so they are "
+                        f"exact."
+                    )
+                else:
+                    lines.append(
+                        "\nTime offsets were shifted onto one concatenated "
+                        "timeline. Join the source audio in the same order for "
+                        "them to line up."
+                    )
             else:
                 lines.append(
                     "\nAudio segmentation and media information were discarded "

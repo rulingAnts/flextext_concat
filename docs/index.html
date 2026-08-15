@@ -203,6 +203,7 @@
   <a href="#modes">Two Modes</a>
   <a href="#first-run">First Run</a>
   <a href="#interface">Interface</a>
+  <a href="#pairing">Pairing</a>
   <a href="#sorting">Sorting</a>
   <a href="#audio">Audio</a>
   <a href="#faq">FAQ</a>
@@ -219,7 +220,7 @@
     <div class="badge-row">
       <span class="badge badge-green">Windows &middot; macOS &middot; Linux</span>
       <span class="badge badge-blue">No installation required</span>
-      <span class="badge badge-gray">No external dependencies</span>
+      <span class="badge badge-gray">ffmpeg bundled</span>
       <span class="badge badge-gray">AGPL-3.0</span>
     </div>
   </div>
@@ -424,6 +425,54 @@
     which. One bad file among fifty never loses the batch.
   </div>
 
+  <!-- Pairing -->
+  <h2 id="pairing">Pairing texts with recordings</h2>
+
+  <p>In combined mode the file list is a two-column table: the text on the left,
+  its recording on the right. The row order is the order texts are written
+  <em>and</em> audio is joined, so the two can never disagree.</p>
+
+  <table>
+    <thead><tr><th>Action</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td>Drag in the <strong>left</strong> column</td>
+          <td>Reorders texts. Each recording travels with its text.</td></tr>
+      <tr><td>Drag in the <strong>right</strong> column</td>
+          <td>Moves a recording to a different text, to fix a wrong pairing.</td></tr>
+      <tr><td>Double-click a recording</td>
+          <td>Pick a different file for that row.</td></tr>
+      <tr><td>Drop audio onto a row</td>
+          <td>Assigns it to that text. Dropping <code>.flextext</code> files
+              adds them to the list instead.</td></tr>
+      <tr><td><strong>Match Audio</strong></td>
+          <td>Re-suggests a recording for every row.</td></tr>
+      <tr><td><strong>Audio Folder&hellip;</strong></td>
+          <td>Where to look for recordings. By default this is each text's own
+              folder; set it when your audio lives elsewhere.</td></tr>
+    </tbody>
+  </table>
+
+  <p>Matching is fuzzy, because filenames in the field rarely line up exactly.
+  It strips export timestamps and processing suffixes, folds case and
+  punctuation, and scores on shared words &mdash; so
+  <code>Crocodile&nbsp;Woman.flextext</code> finds
+  <code>2021-06-21&nbsp;Barnabas&nbsp;Doi&nbsp;Crocodile&nbsp;Woman.m4a</code>.</p>
+
+  <div class="callout tip">
+    When the names have nothing in common &mdash; audio titled in a different
+    language from the text, like <code>Eti&nbsp;Makan&nbsp;Sabun.flextext</code>
+    beside <code>Eti&nbsp;eats&nbsp;soap.wav</code> &mdash; the app falls back to
+    what is sitting in the same folder. Those guesses are marked with
+    <strong>?</strong>: they are the ones worth checking.
+  </div>
+
+  <div class="callout warn">
+    One recording can be suggested for several texts, because a working corpus
+    holds many dated exports of the same text. That is fine while you choose
+    which to include, but combining two texts that share a recording joins that
+    audio twice. The app warns before it does.
+  </div>
+
   <!-- Sorting -->
   <h2 id="sorting">Sorting</h2>
 
@@ -435,12 +484,6 @@
   <strong>title</strong> read from inside the file, or by date created, modified
   or accessed. Numerical order treats digits as numbers, so
   <code>text2</code> sorts before <code>text10</code>.</p>
-
-  <h3>Suffix Order</h3>
-  <p>Groups files that share a base name and orders them by a list of patterns
-  you supply &mdash; useful when you keep several dated exports of the same text.
-  Longer patterns are always tried first, so a specific pattern is never
-  shadowed by a shorter one it contains.</p>
 
   <h3>Advanced (regex) sort</h3>
   <p>Stack several regex layers. Layer 1 is the primary key; each lower layer
@@ -474,32 +517,46 @@
   the source audio joined end to end &mdash; so you can open the combined text
   against the combined audio in ELAN.</p>
 
-  <p>The gap defaults to <strong>1005&nbsp;ms</strong>, which is exactly what the
-  companion <a href="https://sethj.github.io/concat/">Audio Concatenator</a>
-  inserts between files (500&nbsp;ms silence + 5&nbsp;ms click + 500&nbsp;ms
-  silence). Set it to 0 for plain gapless concatenation, or to whatever your own
-  joining process uses.</p>
+  <p>If you let the app <strong>join the recordings too</strong>, it measures
+  each one while writing them, so the offsets are <em>exact</em> and the audio
+  is guaranteed to be in the same order as the text. That is the recommended
+  route. Turn joining off to combine the text only; the app then estimates each
+  text's length from its last annotation, which is exact for continuously
+  annotated texts and approximate for ELAN-style ones.</p>
 
-  <p>Naming the combined audio file writes a single <code>&lt;media&gt;</code>
-  entry that every phrase references &mdash; that link is what lets ELAN pair the
-  text with the audio.</p>
+  <p>The gap defaults to <strong>1005&nbsp;ms</strong> &mdash; 500&nbsp;ms
+  silence, a 5&nbsp;ms click, 500&nbsp;ms silence &mdash; matching the
+  <a href="https://github.com/rulingAnts/audio_concat">Audio Concatenator</a>,
+  so files joined by either app stay interchangeable. Set it to 0 for gapless.</p>
+
+  <table>
+    <thead><tr><th>A text that&hellip;</th><th>What happens</th></tr></thead>
+    <tbody>
+      <tr><td>has a recording <em>and</em> segmentation</td>
+          <td>Its offsets are shifted onto the joined timeline. Exact.</td></tr>
+      <tr><td>has a recording but <em>no</em> segmentation</td>
+          <td>Its lines are spread evenly across that recording, so it is
+              usable in ELAN &mdash; ELAN cannot show an annotation without a
+              time slot. Approximate, and reported as such. The timeline still
+              advances by the recording's full length, so everything after it
+              stays aligned.</td></tr>
+      <tr><td>has <em>no</em> recording</td>
+          <td>It is not in the joined audio, so its lines are written without
+              timing rather than pointing at audio that is not there, and it
+              takes up no room in the timeline. The texts around it stay
+              aligned.</td></tr>
+    </tbody>
+  </table>
 
   <div class="callout warn">
-    <strong>Durations are estimated, and that can drift.</strong> A
-    <code>.flextext</code> file does not record how long its recording is, so the
-    app uses the end of the last annotation. That is exact when a text is
-    annotated continuously from zero with no gaps. It is <em>not</em> exact for
-    ELAN-style annotation, which marks utterances and leaves silence unannotated:
-    if the recording keeps running after the final utterance, that trailing audio
-    is invisible, and every later text drifts early by the same amount &mdash;
-    cumulatively. The app names the texts this affects. Check the alignment before
-    relying on it.
-  </div>
-
-  <div class="callout tip">
-    Join the source audio in the <strong>same order</strong> as the file list.
-    Texts with no timing at all take up no room in the timeline, so they do not
-    shift anything.
+    <strong>Without a matched recording, durations are estimated.</strong> A
+    <code>.flextext</code> file does not record how long its audio is, so the
+    app falls back to the end of the last annotation. That is exact for a text
+    annotated continuously from zero, but <em>not</em> for ELAN-style
+    annotation, which marks utterances and leaves silence unannotated: audio
+    after the final utterance is invisible, and later texts drift early by that
+    much, cumulatively. Match a recording to make it exact. The app names the
+    texts affected.
   </div>
 
   <!-- segnum -->
@@ -565,8 +622,11 @@
   reordering them would corrupt the text.</p>
 
   <h3>Do I need ffmpeg, or anything else installed?</h3>
-  <p>No. The downloads are self-contained. Running from source needs only
-  PySide6, plus PyYAML if you want to save and load settings.</p>
+  <p>No &mdash; the downloads bundle ffmpeg. It is used only to measure and join
+  recordings in combined mode; corpus mode and text-only combining are pure XML.
+  Running from source needs PySide6, plus pydub and numpy for audio and PyYAML
+  for settings; without ffmpeg on your PATH the app still runs and estimates
+  durations from annotations instead.</p>
 
   <h3>Can I use the merge engine without the GUI?</h3>
   <p>Yes &mdash; <code>flextext.py</code> has no Qt dependency and can be imported

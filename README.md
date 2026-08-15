@@ -35,18 +35,26 @@ nothing once the texts are merged. The app warns before doing this, and only whe
 loaded files actually contain timing.
 
 **Shift onto one concatenated recording** instead moves each text's offsets forward by
-the total length of the texts before it, plus a gap — so the result lines up with the
-source audio joined end to end, and the combined text can be paired with the combined
-audio in ELAN. The gap defaults to **1005 ms**, exactly what the companion
-[Audio Concatenator](https://github.com/rulingAnts/audio_concat) inserts between files
-(500 ms silence + 5 ms click + 500 ms silence).
+the total length of the texts before it, plus a gap, so the text lines up with the
+recordings joined end to end and can be opened against them in ELAN.
 
-> ⚠️ **Durations are estimated.** A `.flextext` file does not record how long its
-> recording is, so the app uses the end of the last annotation. That is exact for a
-> text annotated continuously from zero, but *not* for ELAN-style annotation, which
-> marks utterances and leaves silence unannotated — any audio after the final
-> utterance is invisible, and every later text drifts early by that much,
-> cumulatively. The app names the texts affected.
+Let the app **join the recordings too** and it measures each one as it writes them, so
+the offsets are *exact* and the audio is guaranteed to be in the same order as the
+text. The gap defaults to **1005 ms**, matching the
+[Audio Concatenator](https://github.com/rulingAnts/audio_concat)'s click separator
+(500 ms silence + 5 ms click + 500 ms silence). Turn joining off to combine the text
+only.
+
+| A text that… | What happens |
+|---|---|
+| has a recording *and* segmentation | offsets shifted onto the joined timeline — exact |
+| has a recording but *no* segmentation | lines spread evenly across it, so ELAN can show them; the timeline still advances by the full recording, so later texts stay aligned |
+| has *no* recording | written without timing, and takes up no room in the timeline |
+
+> ⚠️ **Without a matched recording, durations are estimated** from the last annotation.
+> That is exact for continuously annotated texts but *not* for ELAN-style ones, where
+> audio after the final utterance is invisible and later texts drift cumulatively.
+> Match a recording to make it exact; the app names the texts affected.
 
 Your source files are never modified in either case, so you can always re-run.
 
@@ -63,11 +71,12 @@ never touched.
 ## Features
 
 - Load a folder of `.flextext` files, optionally including subfolders
+- **Pair each text with its recording** in a two-column table — fuzzy auto-matching,
+  drag to re-pair, audio in the same folder by default or a folder of its own
 - Add individual files, drag files in from the file manager, remove or clear
 - Drag-and-drop reordering with multi-select (Shift+Click, Ctrl/Cmd+Click)
 - **Simple sort** — by filename, numerical order, text title, or date
   created/modified/accessed
-- **Suffix Order** — sub-sort files sharing a base name by an ordered pattern list
 - **Advanced (Regex) sort** — multi-layer regex sort with configurable capture groups,
   sort-as modes (natural text, numeric, alphabetical), and per-layer direction
 - Save and load all settings as commented YAML
@@ -82,12 +91,16 @@ never touched.
 - Python 3.10+
 - [PySide6](https://pypi.org/project/PySide6/)
 - [PyYAML](https://pypi.org/project/PyYAML/) — optional, for saving/loading settings
+- [pydub](https://pypi.org/project/pydub/) + [numpy](https://pypi.org/project/numpy/)
+  and [ffmpeg](https://ffmpeg.org/) — optional, only for measuring and joining audio
 
 ```
-pip install PySide6 PyYAML
+pip install PySide6 PyYAML pydub numpy
 ```
 
-No external binaries are needed.
+ffmpeg is bundled in the downloads. From source, put a static binary in `bin/`
+(see [`bin/README.md`](bin/README.md)) or install it system-wide. Without it the
+app still runs — it estimates durations from annotations instead of measuring them.
 
 ---
 
@@ -114,11 +127,15 @@ pyinstaller --onefile --windowed --name flextext-concat app.py
 app.py            Main GUI (PySide6)
 combiner.py       Background merge worker
 flextext.py       FLExText parsing and merge engine (no Qt — importable on its own)
-tests/            pytest suite for the merge engine
+matching.py       Fuzzy .flextext ↔ audio filename matching (no Qt)
+audio.py          ffmpeg discovery, duration probing, concatenation
+bin/              Placeholder for the bundled ffmpeg binary
+tests/            pytest suite for the engine and the matcher
 docs/             GitHub Pages documentation site
 ```
 
-`flextext.py` has no Qt dependency and can be used as a library or from a script.
+`flextext.py` and `matching.py` have no Qt dependency and can be used as libraries or
+driven from a script.
 
 ---
 

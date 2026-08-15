@@ -580,7 +580,8 @@ def test_untimed_text_does_not_advance_the_timeline(corpus_dir, tmp_path):
 def test_matched_audio_duration_overrides_the_estimate(corpus_dir, tmp_path):
     """A real recording length replaces the last-annotation guess."""
     files = _load(corpus_dir, "elan.flextext", "app.flextext")
-    durations = {str(corpus_dir / "elan.flextext"): 60000}   # 60s, not 3870
+    durations = {str(corpus_dir / "elan.flextext"): 60000,   # 60s, not 3870
+                 str(corpus_dir / "app.flextext"): 5000}
     root = _roundtrip(
         fx.build_combined(files, title="X", title_lang="id",
                           audio_mode=fx.AUDIO_SHIFT, gap_ms=1005,
@@ -601,7 +602,9 @@ def test_unsegmented_text_between_segmented_ones_keeps_the_rest_aligned(
     recording but no offsets must still occupy its share of the timeline.
     """
     files = _load(corpus_dir, "app.flextext", "flex.flextext", "elan.flextext")
-    durations = {str(corpus_dir / "flex.flextext"): 30000}   # the untimed one
+    durations = {str(corpus_dir / "app.flextext"): 4842,
+                 str(corpus_dir / "flex.flextext"): 30000,   # the untimed one
+                 str(corpus_dir / "elan.flextext"): 3870}
     root = _roundtrip(
         fx.build_combined(files, title="X", title_lang="id",
                           audio_mode=fx.AUDIO_SHIFT, gap_ms=1005,
@@ -612,6 +615,52 @@ def test_unsegmented_text_between_segmented_ones_keeps_the_rest_aligned(
     last = paragraphs[2].findall("phrases/phrase")[0]
     # app (4842) + gap + flex audio (30000) + gap = 36852
     assert int(last.get("begin-time-offset")) == 1770 + 4842 + 1005 + 30000 + 1005
+
+
+def test_text_absent_from_the_joined_audio_is_left_untimed(corpus_dir, tmp_path):
+    """
+    On an audio-backed timeline, a text with no recording is not in the audio.
+    Giving it offsets would point past the end of the file, and letting it
+    advance the cursor would desync everything after it.
+    """
+    files = _load(corpus_dir, "app.flextext", "elan.flextext")
+    durations = {str(corpus_dir / "app.flextext"): 2000}     # elan has none
+    tree, warnings = fx.build_combined(
+        files, title="X", title_lang="id", audio_mode=fx.AUDIO_SHIFT,
+        gap_ms=1005, durations=durations)
+    root = _roundtrip(tree, tmp_path)
+
+    paragraphs = root.findall(".//paragraph")
+    app_phrases = paragraphs[0].findall("phrases/phrase")
+    elan_phrases = paragraphs[1].findall("phrases/phrase")
+
+    assert [p.get("begin-time-offset") for p in app_phrases] == ["0", "2421"]
+    assert all(p.get("begin-time-offset") is None for p in elan_phrases)
+    assert all(p.get("media-file") is None for p in elan_phrases)
+    assert any("not in the joined audio" in w for w in warnings)
+
+
+def test_unmatched_text_in_the_middle_does_not_desync_the_rest(
+        corpus_dir, tmp_path):
+    """The failure this whole mechanism exists to prevent."""
+    extra = corpus_dir / "third.flextext"
+    extra.write_text(APP_DIALECT.replace("Cerita Satu", "Ketiga"),
+                     encoding="utf-8")
+    files = _load(corpus_dir, "app.flextext", "elan.flextext", "third.flextext")
+    durations = {                       # elan sits between them with no audio
+        str(corpus_dir / "app.flextext"): 2000,
+        str(extra): 4000,
+    }
+    root = _roundtrip(
+        fx.build_combined(files, title="X", title_lang="id",
+                          audio_mode=fx.AUDIO_SHIFT, gap_ms=1005,
+                          durations=durations)[0],
+        tmp_path,
+    )
+    third = root.findall(".//paragraph")[2].findall("phrases/phrase")
+    # third starts right after app's 2000 ms + one gap — the unmatched text
+    # between them contributes nothing
+    assert third[0].get("begin-time-offset") == str(2000 + 1005)
 
 
 def test_untimed_text_with_no_audio_still_does_not_advance(corpus_dir, tmp_path):
@@ -647,7 +696,10 @@ def test_synthesized_offsets_start_after_preceding_texts(corpus_dir, tmp_path):
     root = _roundtrip(
         fx.build_combined(files, title="X", title_lang="id",
                           audio_mode=fx.AUDIO_SHIFT, gap_ms=1005,
-                          durations={str(corpus_dir / "flex.flextext"): 3000})[0],
+                          durations={
+                              str(corpus_dir / "app.flextext"): 4842,
+                              str(corpus_dir / "flex.flextext"): 3000,
+                          })[0],
         tmp_path,
     )
     second = root.findall(".//paragraph")[1].findall("phrases/phrase")

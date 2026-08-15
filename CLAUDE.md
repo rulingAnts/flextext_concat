@@ -96,6 +96,12 @@ Verified against SIL's spec (Ken Zook, *Technical Notes on FLEx Text Interlinear
   `connect.flextext.app` URLs, absolute `file:///` URIs, and bare relative
   filenames; only 1 of 6 resolved locally when checked. Same question applies to
   FlexText Editor.
+- **Audio timeline invariants** (combined + shift mode). Breaking any of these
+  silently desyncs ELAN: a text with a matched recording must advance the
+  timeline by that recording's *measured* length; a text absent from the joined
+  audio must neither advance it nor keep offsets; and the gap used for offsets
+  must be the separator's *rendered* length, not its nominal one. Corpus mode
+  does none of this — it is a verbatim passthrough.
 - **Not yet verified by a human.** No one has run the GUI by hand, and no output
   has been imported into FLEx — the one check that matters most, since FLEx's
   import error reporting is poor.

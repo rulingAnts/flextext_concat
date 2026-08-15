@@ -154,13 +154,16 @@ def _click_segment():
 
 def join_audio(paths: list[str], output: str, *, gap_ms: int = SEPARATOR_MS,
                use_click: bool = True, sample_width: int = 2,
-               progress=None) -> list[int]:
+               progress=None) -> tuple[list[int], int]:
     """
-    Concatenate audio files, returning each one's duration in milliseconds.
+    Concatenate audio files, returning (durations_ms, actual_gap_ms).
 
-    The returned durations are measured after normalisation, so they are the
-    lengths the files actually occupy in the output — which is exactly what the
-    combined text's time offsets must be shifted by.
+    Both numbers are measured from the rendered audio rather than assumed, so
+    offsets computed from them land exactly.  The separator in particular is
+    not its nominal length: a 5 ms click at 44.1 kHz is 220 frames, i.e. 4.988
+    ms, so the click separator really occupies 1004 ms rather than 1005.  Using
+    the nominal figure would push every text one millisecond further out than
+    the audio actually goes.
 
     `progress(i, name)` is called before each file if given.
     """
@@ -206,4 +209,4 @@ def join_audio(paths: list[str], output: str, *, gap_ms: int = SEPARATOR_MS,
         combined.export(output, format="wav")
     except Exception as exc:
         raise AudioError(f"Could not write '{output}': {exc}") from exc
-    return durations
+    return durations, (len(separator) if separator is not None else 0)

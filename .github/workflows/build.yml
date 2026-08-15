@@ -9,8 +9,9 @@ name: Build portable app
 # runners, add a schedule: trigger, or make the repo private without Seth's
 # explicit approval and a fresh cost estimate.
 #
-# Unlike the sibling audio_concat workflow there is no ffmpeg step: this app
-# has no external binary dependency, so nothing is bundled into bin/.
+# ffmpeg is bundled because combined mode can measure and join the recordings
+# matched to each text. Everything else in the app is pure XML and runs
+# without it, so its absence degrades rather than breaks.
 
 on:
   push:
@@ -59,8 +60,30 @@ jobs:
         with:
           python-version: '3.12'
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
       - name: Install Python dependencies
         run: pip install -r requirements.txt pyinstaller
+
+      # ffmpeg-static ships LGPL static builds for darwin-arm64, linux-x64 and
+      # win32-x64. ffprobe is intentionally omitted to keep the download small;
+      # pydub falls back gracefully without it.
+      - name: Download ffmpeg (npm)
+        shell: bash
+        run: |
+          npm install ffmpeg-static
+          node -e "
+            var fs=require('fs'),path=require('path');
+            var ext=process.platform==='win32'?'.exe':'';
+            var ff=require('ffmpeg-static');
+            fs.mkdirSync('bin',{recursive:true});
+            var dst=path.join('bin','ffmpeg'+ext);
+            fs.copyFileSync(ff,dst);
+            try{fs.chmodSync(dst,0o755);}catch(e){}
+            console.log(ff,'->',dst);
+          "
 
       # ── Linux system libs ──────────────────────────────────────────────────
       # PySide6 needs several X11/GL libraries even on a headless runner.
@@ -84,6 +107,7 @@ jobs:
         run: >
           python -m PyInstaller
           --onedir --windowed --name flextext-concat
+          --add-data "bin:bin"
           app.py
 
       # Windows: onefile is the conventional single-exe distribution format.
@@ -92,6 +116,7 @@ jobs:
         run: >
           python -m PyInstaller
           --onefile --windowed --name flextext-concat
+          --add-data "bin:bin"
           app.py
 
       # Linux: onedir gives a directory tree that appimagetool can wrap.
@@ -104,6 +129,7 @@ jobs:
         run: >
           python -m PyInstaller
           --onedir --name flextext-concat
+          --add-data "bin:bin"
           app.py
 
       # ── Package ────────────────────────────────────────────────────────────

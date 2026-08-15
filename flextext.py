@@ -565,9 +565,15 @@ def build_combined(files: list[FlextextFile], *,
     shifting = audio_mode == AUDIO_SHIFT
     media_guid = str(uuid.uuid4()) if (shifting and media_location) else None
     durations = durations or {}
+    # When any recording has been measured, the timeline IS that set of
+    # recordings.  A text with no recording is simply not in the audio, so it
+    # can neither occupy time nor carry offsets that point into it — placing it
+    # anyway would push every following text out by a file that isn't there.
+    audio_backed = bool(durations)
     cumulative = 0
     estimated: list[str] = []
     synthesized: list[str] = []
+    unplaced: list[str] = []
     n_shifted = 0
     n_synthesized = 0
 
@@ -583,7 +589,13 @@ def build_combined(files: list[FlextextFile], *,
             # estimate is the end of the last annotation, which misses any
             # trailing audio and makes every later text drift.
             audio_ms = durations.get(str(f.path)) if shifting else None
-            if audio_ms is not None:
+            # Absent from an audio-backed timeline: drop its timing entirely
+            # rather than point it at a stretch of recording that isn't there.
+            orphaned = shifting and audio_backed and audio_ms is None
+            if orphaned:
+                duration = 0
+                unplaced.append(source_title)
+            elif audio_ms is not None:
                 duration = audio_ms
             elif shifting:
                 duration, exact = text_duration(src_text)
@@ -592,13 +604,15 @@ def build_combined(files: list[FlextextFile], *,
             else:
                 duration = 0
 
+            phrase_mode = AUDIO_DISCARD if orphaned else audio_mode
             for src_phrase in src_text.iterfind(
                     "paragraphs/paragraph/phrases/phrase"):
                 phrase = copy.deepcopy(src_phrase)
-                if shifting and phrase.get("begin-time-offset") is not None:
+                if (shifting and not orphaned
+                        and phrase.get("begin-time-offset") is not None):
                     n_shifted += 1
                 _clean_phrase(phrase, strip_audio_notes=strip_audio_notes,
-                              audio_mode=audio_mode, shift_ms=cumulative,
+                              audio_mode=phrase_mode, shift_ms=cumulative,
                               media_guid=media_guid)
                 phrases_el.append(phrase)
 
@@ -648,7 +662,7 @@ def build_combined(files: list[FlextextFile], *,
                           {"guid": media_guid, "location": media_location})
         warnings.extend(_shift_warnings(n_shifted, cumulative, gap_ms,
                                         estimated, bool(media_guid),
-                                        synthesized, n_synthesized))
+                                        synthesized, n_synthesized, unplaced))
 
     if not contributing:
         warnings.append("No texts were written — the input list was empty.")
@@ -663,7 +677,8 @@ def _name_list(names: list[str], limit: int = 5) -> str:
 
 def _shift_warnings(n_shifted: int, total_ms: int, gap_ms: int,
                     estimated: list[str], has_media: bool,
-                    synthesized: list[str], n_synthesized: int) -> list[str]:
+                    synthesized: list[str], n_synthesized: int,
+                    unplaced: list[str]) -> list[str]:
     """Explain what a shifted timeline assumes, and where it may be wrong."""
     if not n_shifted and not n_synthesized:
         return ["Shift offsets was selected, but none of the texts carry time "
@@ -685,6 +700,14 @@ def _shift_warnings(n_shifted: int, total_ms: int, gap_ms: int,
             f"across the recording. That timing is approximate — it keeps the "
             f"text usable in ELAN and keeps every later text correctly "
             f"positioned, but it does not follow the speech."
+        )
+    if unplaced:
+        out.append(
+            f"{len(unplaced)} text(s) have no matched recording "
+            f"({_name_list(unplaced)}), so they are not in the joined audio. "
+            f"Their lines were written without any timing rather than pointing "
+            f"at a stretch of recording that does not exist, and they take up "
+            f"no room in the timeline, so the texts around them stay aligned."
         )
     if estimated:
         out.append(
