@@ -460,6 +460,28 @@ def _strip_segnum(text_el: ET.Element) -> list[str]:
     return []
 
 
+def _distribute_offsets(phrases_el: ET.Element, start_ms: int, duration_ms: int,
+                        media_guid: str | None) -> int:
+    """
+    Give every phrase of an unsegmented text an even slice of its recording.
+
+    A text with a recording but no time offsets cannot be represented in ELAN
+    at all — an annotation there must have a time slot — so the choice is
+    between approximate timing and no usable pairing.  The slices are evenly
+    divided and make no claim to match the speech; the caller reports how many
+    phrases were treated this way so it is never mistaken for real
+    segmentation.
+    """
+    count = len(phrases_el)
+    for i, phrase in enumerate(phrases_el):
+        phrase.set("begin-time-offset", str(start_ms + round(i * duration_ms / count)))
+        phrase.set("end-time-offset",
+                   str(start_ms + round((i + 1) * duration_ms / count)))
+        if media_guid:
+            phrase.set("media-file", media_guid)
+    return count
+
+
 def _renumber_segnum(text_el: ET.Element) -> list[str]:
     """
     Renumber segnum continuously across the whole combined text.
@@ -498,6 +520,8 @@ def build_combined(files: list[FlextextFile], *,
                    audio_mode: str = AUDIO_DISCARD,
                    gap_ms: int = DEFAULT_GAP_MS,
                    media_location: str = "",
+                   durations: dict[str, int] | None = None,
+                   distribute_untimed: bool = True,
                    ) -> tuple[ET.ElementTree, list[str]]:
     """
     Combine into a single FLEx text: one <paragraph> per source text.
@@ -540,9 +564,12 @@ def build_combined(files: list[FlextextFile], *,
 
     shifting = audio_mode == AUDIO_SHIFT
     media_guid = str(uuid.uuid4()) if (shifting and media_location) else None
+    durations = durations or {}
     cumulative = 0
     estimated: list[str] = []
+    synthesized: list[str] = []
     n_shifted = 0
+    n_synthesized = 0
 
     for f in files:
         for src_text in f.texts:
@@ -552,9 +579,18 @@ def build_combined(files: list[FlextextFile], *,
             paragraph_el = ET.SubElement(paragraphs_el, "paragraph")
             phrases_el = ET.SubElement(paragraph_el, "phrases")
 
-            duration, exact = (text_duration(src_text) if shifting else (0, True))
-            if shifting and duration and not exact:
-                estimated.append(source_title)
+            # A matched recording gives the true length; without one the only
+            # estimate is the end of the last annotation, which misses any
+            # trailing audio and makes every later text drift.
+            audio_ms = durations.get(str(f.path)) if shifting else None
+            if audio_ms is not None:
+                duration = audio_ms
+            elif shifting:
+                duration, exact = text_duration(src_text)
+                if duration and not exact:
+                    estimated.append(source_title)
+            else:
+                duration = 0
 
             for src_phrase in src_text.iterfind(
                     "paragraphs/paragraph/phrases/phrase"):
@@ -567,8 +603,18 @@ def build_combined(files: list[FlextextFile], *,
                 phrases_el.append(phrase)
 
             if shifting:
-                # Only advance past texts that actually occupy the timeline;
-                # a text with no audio contributes nothing to concatenate.
+                already_timed = any(p.get("begin-time-offset") is not None
+                                    for p in phrases_el)
+                if (audio_ms and not already_timed
+                        and distribute_untimed and len(phrases_el)):
+                    n_synthesized += _distribute_offsets(
+                        phrases_el, cumulative, audio_ms, media_guid)
+                    synthesized.append(source_title)
+
+                # Advance by the recording's real length even when the text
+                # carried no offsets of its own: the audio still occupies that
+                # much of the joined timeline, and skipping it would throw
+                # every following text out by the whole file.
                 if duration:
                     cumulative += duration + gap_ms
 
@@ -601,37 +647,53 @@ def build_combined(files: list[FlextextFile], *,
             ET.SubElement(media_files, "media",
                           {"guid": media_guid, "location": media_location})
         warnings.extend(_shift_warnings(n_shifted, cumulative, gap_ms,
-                                        estimated, bool(media_guid)))
+                                        estimated, bool(media_guid),
+                                        synthesized, n_synthesized))
 
     if not contributing:
         warnings.append("No texts were written — the input list was empty.")
     return ET.ElementTree(root), warnings
 
 
-def _shift_warnings(n_shifted: int, total_ms: int, gap_ms: int,
-                    estimated: list[str], has_media: bool) -> list[str]:
-    """Explain what a shifted timeline assumes, and where it may be wrong."""
-    if not n_shifted:
-        return ["Shift offsets was selected, but none of the texts carry time "
-                "offsets, so nothing was shifted."]
+def _name_list(names: list[str], limit: int = 5) -> str:
+    shown = ", ".join(f"'{n}'" for n in names[:limit])
+    return shown + (f", and {len(names) - limit} more"
+                    if len(names) > limit else "")
 
-    out = [f"Shifted {n_shifted} phrase time offset(s) onto a single "
-           f"{total_ms / 1000:.3f}s timeline, with a {gap_ms} ms gap between "
-           f"texts. Concatenate the source audio in this same order for the "
-           f"result to line up."]
+
+def _shift_warnings(n_shifted: int, total_ms: int, gap_ms: int,
+                    estimated: list[str], has_media: bool,
+                    synthesized: list[str], n_synthesized: int) -> list[str]:
+    """Explain what a shifted timeline assumes, and where it may be wrong."""
+    if not n_shifted and not n_synthesized:
+        return ["Shift offsets was selected, but none of the texts carry time "
+                "offsets and none had a matched recording, so nothing was "
+                "shifted."]
+
+    out = [f"Built a single {total_ms / 1000:.3f}s timeline with a {gap_ms} ms "
+           f"gap between texts: {n_shifted} phrase offset(s) shifted"
+           + (f", {n_synthesized} given even slices of their recording."
+              if n_synthesized else ".")]
     if not has_media:
         out.append("No combined audio file was named, so the phrases carry "
                    "shifted offsets but no media-file link. Give one to pair "
                    "the text with audio in ELAN.")
-    if estimated:
-        shown = ", ".join(f"'{t}'" for t in estimated[:5])
-        more = f", and {len(estimated) - 5} more" if len(estimated) > 5 else ""
+    if synthesized:
         out.append(
-            f"Durations are estimated from each text's last annotation. "
-            f"{len(estimated)} text(s) are annotated in utterances with gaps "
-            f"rather than continuously ({shown}{more}), so if those recordings "
-            f"continue past the final annotation, every later text drifts early "
-            f"by that much. Check the alignment before relying on it."
+            f"{len(synthesized)} text(s) had a recording but no segmentation "
+            f"({_name_list(synthesized)}), so their lines were spread evenly "
+            f"across the recording. That timing is approximate — it keeps the "
+            f"text usable in ELAN and keeps every later text correctly "
+            f"positioned, but it does not follow the speech."
+        )
+    if estimated:
+        out.append(
+            f"{len(estimated)} text(s) have no matched recording, so their "
+            f"length was estimated from the last annotation "
+            f"({_name_list(estimated)}). Those texts are annotated in "
+            f"utterances with gaps, so if the recording continues past the "
+            f"final annotation, every later text drifts early by that much. "
+            f"Match a recording to them to make this exact."
         )
     return out
 

@@ -577,6 +577,120 @@ def test_untimed_text_does_not_advance_the_timeline(corpus_dir, tmp_path):
     assert spans[-1] == 1770 + 4842 + 1005
 
 
+def test_matched_audio_duration_overrides_the_estimate(corpus_dir, tmp_path):
+    """A real recording length replaces the last-annotation guess."""
+    files = _load(corpus_dir, "elan.flextext", "app.flextext")
+    durations = {str(corpus_dir / "elan.flextext"): 60000}   # 60s, not 3870
+    root = _roundtrip(
+        fx.build_combined(files, title="X", title_lang="id",
+                          audio_mode=fx.AUDIO_SHIFT, gap_ms=1005,
+                          durations=durations)[0],
+        tmp_path,
+    )
+    spans = [int(p.get("begin-time-offset"))
+             for p in root.iterfind(".//phrase")
+             if p.get("begin-time-offset") is not None]
+    assert spans[0] == 1770                       # elan first, unshifted
+    assert spans[1] == 60000 + 1005               # app shifted by TRUE length
+
+
+def test_unsegmented_text_between_segmented_ones_keeps_the_rest_aligned(
+        corpus_dir, tmp_path):
+    """
+    The case that would silently corrupt everything downstream: a text with a
+    recording but no offsets must still occupy its share of the timeline.
+    """
+    files = _load(corpus_dir, "app.flextext", "flex.flextext", "elan.flextext")
+    durations = {str(corpus_dir / "flex.flextext"): 30000}   # the untimed one
+    root = _roundtrip(
+        fx.build_combined(files, title="X", title_lang="id",
+                          audio_mode=fx.AUDIO_SHIFT, gap_ms=1005,
+                          durations=durations, distribute_untimed=False)[0],
+        tmp_path,
+    )
+    paragraphs = root.findall(".//paragraph")
+    last = paragraphs[2].findall("phrases/phrase")[0]
+    # app (4842) + gap + flex audio (30000) + gap = 36852
+    assert int(last.get("begin-time-offset")) == 1770 + 4842 + 1005 + 30000 + 1005
+
+
+def test_untimed_text_with_no_audio_still_does_not_advance(corpus_dir, tmp_path):
+    files = _load(corpus_dir, "app.flextext", "flex.flextext", "elan.flextext")
+    root = _roundtrip(
+        fx.build_combined(files, title="X", title_lang="id",
+                          audio_mode=fx.AUDIO_SHIFT, gap_ms=1005)[0],
+        tmp_path,
+    )
+    spans = [int(p.get("begin-time-offset"))
+             for p in root.iterfind(".//phrase")
+             if p.get("begin-time-offset") is not None]
+    assert spans[-1] == 1770 + 4842 + 1005        # flex contributed nothing
+
+
+def test_untimed_text_gets_evenly_divided_offsets(corpus_dir, tmp_path):
+    """ELAN needs a time slot on every annotation, so they are synthesized."""
+    files = _load(corpus_dir, "flex.flextext")       # 3 phrases, no offsets
+    tree, warnings = fx.build_combined(
+        files, title="X", title_lang="en", audio_mode=fx.AUDIO_SHIFT,
+        durations={str(corpus_dir / "flex.flextext"): 3000},
+    )
+    root = _roundtrip(tree, tmp_path)
+    spans = [(int(p.get("begin-time-offset")), int(p.get("end-time-offset")))
+             for p in root.iterfind(".//phrase")]
+    assert spans == [(0, 1000), (1000, 2000), (2000, 3000)]
+    assert any("spread evenly" in w for w in warnings)
+    assert any("approximate" in w for w in warnings)
+
+
+def test_synthesized_offsets_start_after_preceding_texts(corpus_dir, tmp_path):
+    files = _load(corpus_dir, "app.flextext", "flex.flextext")
+    root = _roundtrip(
+        fx.build_combined(files, title="X", title_lang="id",
+                          audio_mode=fx.AUDIO_SHIFT, gap_ms=1005,
+                          durations={str(corpus_dir / "flex.flextext"): 3000})[0],
+        tmp_path,
+    )
+    second = root.findall(".//paragraph")[1].findall("phrases/phrase")
+    base = 4842 + 1005
+    assert int(second[0].get("begin-time-offset")) == base
+    assert int(second[-1].get("end-time-offset")) == base + 3000
+
+
+def test_synthesis_can_be_turned_off(corpus_dir, tmp_path):
+    files = _load(corpus_dir, "flex.flextext")
+    root = _roundtrip(
+        fx.build_combined(files, title="X", title_lang="en",
+                          audio_mode=fx.AUDIO_SHIFT,
+                          durations={str(corpus_dir / "flex.flextext"): 3000},
+                          distribute_untimed=False)[0],
+        tmp_path,
+    )
+    assert all(p.get("begin-time-offset") is None
+               for p in root.iterfind(".//phrase"))
+
+
+def test_synthesis_never_overwrites_real_segmentation(corpus_dir, tmp_path):
+    """A text that already has offsets keeps them, shifted, not replaced."""
+    files = _load(corpus_dir, "app.flextext")
+    root = _roundtrip(
+        fx.build_combined(files, title="X", title_lang="id",
+                          audio_mode=fx.AUDIO_SHIFT,
+                          durations={str(corpus_dir / "app.flextext"): 99999})[0],
+        tmp_path,
+    )
+    spans = [(int(p.get("begin-time-offset")), int(p.get("end-time-offset")))
+             for p in root.iterfind(".//phrase")]
+    assert spans == [(0, 2421), (2421, 4842)]
+
+
+def test_matched_audio_suppresses_the_drift_warning(corpus_dir):
+    files = _load(corpus_dir, "elan.flextext")
+    _, warnings = fx.build_combined(
+        files, title="X", title_lang="id", audio_mode=fx.AUDIO_SHIFT,
+        durations={str(corpus_dir / "elan.flextext"): 60000})
+    assert not any("drifts early" in w for w in warnings)
+
+
 def test_shift_tolerates_unparseable_offsets(tmp_path):
     src = tmp_path / "junk.flextext"
     src.write_text(
