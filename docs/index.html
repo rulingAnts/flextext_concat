@@ -232,25 +232,26 @@
     <div class="dl-card" id="card-mac">
       <span class="plat-name">macOS</span>
       <span class="plat-sub">Apple Silicon (arm64)<br>macOS 13 Ventura or later</span>
-      <a id="dl-mac" class="dl-btn loading" href="#">Loading&hellip;</a>
+      <a id="dl-mac" class="dl-btn" href="https://github.com/rulingAnts/flextext_concat/releases" target="_blank">Download</a>
       <span class="dl-meta" id="meta-mac"></span>
     </div>
     <div class="dl-card" id="card-win">
       <span class="plat-name">Windows</span>
       <span class="plat-sub">64-bit (x86_64)<br>Windows 10 / 11</span>
-      <a id="dl-win" class="dl-btn loading" href="#">Loading&hellip;</a>
+      <a id="dl-win" class="dl-btn" href="https://github.com/rulingAnts/flextext_concat/releases" target="_blank">Download</a>
       <span class="dl-meta" id="meta-win"></span>
     </div>
     <div class="dl-card" id="card-linux">
       <span class="plat-name">Linux</span>
       <span class="plat-sub">64-bit (amd64)<br>AppImage &mdash; runs on most distros</span>
-      <a id="dl-linux" class="dl-btn loading" href="#">Loading&hellip;</a>
+      <a id="dl-linux" class="dl-btn" href="https://github.com/rulingAnts/flextext_concat/releases" target="_blank">Download</a>
       <span class="dl-meta" id="meta-linux"></span>
     </div>
   </div>
 
   <p class="release-line" id="release-line">
-    Fetching latest release&hellip;
+    Downloads are on the GitHub releases page &mdash; pick the newest release
+    and the file for your platform.
     &ensp;&#x2022;&ensp;
     <a href="https://github.com/rulingAnts/flextext_concat/releases" target="_blank">All releases &rarr;</a>
   </p>
@@ -671,81 +672,6 @@
     btn.classList.add('active');
   }
 
-  /* Download cards - populated from the GitHub Releases API */
-  (async () => {
-    const REPO      = 'rulingAnts/flextext_concat';
-    const API_URL   = 'https://api.github.com/repos/' + REPO + '/releases/latest';
-    const CACHE_KEY = 'fc_latest_release';
-    const CACHE_TTL = 60 * 60 * 1000; // 1 hour
-
-    function fmtSize(bytes) {
-      return bytes >= 1e6
-        ? Math.round(bytes / 1e6) + ' MB'
-        : Math.round(bytes / 1e3) + ' KB';
-    }
-
-    function fmtDate(iso) {
-      return new Date(iso).toLocaleDateString('en-US',
-        { year: 'numeric', month: 'long', day: 'numeric' });
-    }
-
-    async function fetchRelease() {
-      try {
-        const cached = localStorage.getItem(CACHE_KEY);
-        if (cached) {
-          const { data, ts } = JSON.parse(cached);
-          if (Date.now() - ts < CACHE_TTL) return data;
-        }
-      } catch (_) {}
-      const r = await fetch(API_URL);
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      const data = await r.json();
-      try {
-        localStorage.setItem(CACHE_KEY, JSON.stringify({ data, ts: Date.now() }));
-      } catch (_) {}
-      return data;
-    }
-
-    function wireButton(btnId, metaId, asset) {
-      const btn  = document.getElementById(btnId);
-      const meta = document.getElementById(metaId);
-      btn.href        = asset.browser_download_url;
-      btn.textContent = 'Download  ' + fmtSize(asset.size);
-      btn.classList.remove('loading');
-      if (meta) meta.textContent = asset.name;
-    }
-
-    try {
-      const rel = await fetchRelease();
-
-      const mac   = rel.assets.find(a => a.name.includes('macos')   && a.name.endsWith('.zip'));
-      const win   = rel.assets.find(a => a.name.includes('windows') && a.name.endsWith('.exe'));
-      const linux = rel.assets.find(a => a.name.includes('linux')   && a.name.endsWith('.AppImage'));
-
-      if (mac)   wireButton('dl-mac',   'meta-mac',   mac);
-      if (win)   wireButton('dl-win',   'meta-win',   win);
-      if (linux) wireButton('dl-linux', 'meta-linux', linux);
-
-      document.getElementById('release-line').innerHTML =
-        'Latest release: <strong>' + rel.tag_name + '</strong>' +
-        ' &ensp;&bull;&ensp; Released ' + fmtDate(rel.published_at) +
-        ' &ensp;&bull;&ensp; ' +
-        '<a href="https://github.com/' + REPO + '/releases" target="_blank">All releases &rarr;</a>';
-
-    } catch (err) {
-      console.warn('Could not fetch release info:', err);
-      ['dl-mac', 'dl-win', 'dl-linux'].forEach(id => {
-        const btn = document.getElementById(id);
-        btn.textContent = 'Download';
-        btn.href = 'https://github.com/' + REPO + '/releases/latest';
-        btn.classList.remove('loading');
-      });
-      document.getElementById('release-line').innerHTML =
-        'Could not fetch release info automatically. &ensp;&bull;&ensp; ' +
-        '<a href="https://github.com/' + REPO + '/releases/latest" target="_blank">' +
-        'Go to latest release &rarr;</a>';
-    }
-  })();
 </script>
 
 </body>
