@@ -188,11 +188,13 @@ def join_audio(paths: list[str], output: str, *, gap_ms: int = SEPARATOR_MS,
     `progress(i, name)` is called before each file; `cancelled()` is polled
     between files and raises AudioCancelled without writing anything.
     """
-    configure()
-    from pydub import AudioSegment
-
+    # Validate the input before the environment: an empty list is the caller's
+    # bug and deserves that error even on a machine with no ffmpeg.
     if not paths:
         raise AudioError("No audio files to join.")
+
+    configure()
+    from pydub import AudioSegment
 
     if use_click and gap_ms == SEPARATOR_MS:
         separator = _click_segment()

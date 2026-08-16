@@ -67,6 +67,10 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Install dependencies
         run: pip install -r requirements.txt pytest
+      # Without ffmpeg the audio tests self-skip and CI stops exercising the
+      # join/cancel/duration paths entirely — 11 tests silently vanished.
+      - name: Install ffmpeg for the audio tests
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends ffmpeg
       # The merge engine has no Qt dependency, so it tests on a bare runner.
       - name: Run engine tests
         run: python -m pytest tests/ -q
