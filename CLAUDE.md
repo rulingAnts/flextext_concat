@@ -102,6 +102,11 @@ Verified against SIL's spec (Ken Zook, *Technical Notes on FLEx Text Interlinear
   audio must neither advance it nor keep offsets; and the gap used for offsets
   must be the separator's *rendered* length, not its nominal one. Corpus mode
   does none of this — it is a verbatim passthrough.
+- **pydub is on borrowed time.** It imports the stdlib `audioop`, which PEP 594
+  removed in Python 3.13, and pydub is effectively unmaintained. CI pins 3.12
+  for this reason; bumping it builds fine and then fails at runtime on any
+  audio operation. Replacing pydub (or vendoring an `audioop` shim) is the real
+  fix. Only `audio.py` touches it.
 - **Not yet verified by a human.** No one has run the GUI by hand, and no output
   has been imported into FLEx — the one check that matters most, since FLEx's
   import error reporting is poor.

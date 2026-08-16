@@ -353,6 +353,7 @@ class PairingTable(QTableWidget):
         header.setSectionResizeMode(self.AUDIO_COL, QHeaderView.ResizeMode.Stretch)
 
         self._drag_col = self.TEXT_COL
+        self._drag_row: int | None = None
         self.itemDoubleClicked.connect(self._on_double_click)
 
     # ── Row data ─────────────────────────────────────────────────────────────
@@ -438,6 +439,9 @@ class PairingTable(QTableWidget):
         index = self.indexAt(event.position().toPoint())
         if index.isValid():
             self._drag_col = index.column()
+            self._drag_row = index.row()
+        else:
+            self._drag_row = None
         super().mousePressEvent(event)
 
     def dragEnterEvent(self, event):
@@ -496,21 +500,30 @@ class PairingTable(QTableWidget):
         event.acceptProposedAction()
 
     def _drop_audio(self, event):
-        """Move an audio assignment from one row to another."""
-        source_rows = self.selected_rows()
+        """
+        Swap an audio assignment between two rows.
+
+        Swapping rather than moving: dropping onto a row that already has a
+        recording would otherwise discard it silently, and the row you dragged
+        from is the obvious place for it to go.  The dragged row is the one the
+        drag started on, not merely the first selected, so a stray multi-row
+        selection cannot move the wrong pairing.
+        """
+        source = self._drag_row
         target = min(self._target_row(event), self.rowCount() - 1)
-        if not source_rows or target < 0:
+        if source is None or target < 0 or source == target:
             event.ignore()
             return
-        row = source_rows[0]
-        if row == target:
-            event.ignore()
-            return
-        item = self.item(row, self.AUDIO_COL)
-        path = item.data(Qt.ItemDataRole.UserRole)
-        confidence = item.data(Qt.ItemDataRole.UserRole + 1)
-        self.set_audio(target, path, confidence)
-        self.set_audio(row, None)
+
+        def read(row):
+            item = self.item(row, self.AUDIO_COL)
+            return (item.data(Qt.ItemDataRole.UserRole),
+                    item.data(Qt.ItemDataRole.UserRole + 1))
+
+        source_audio, source_conf = read(source)
+        target_audio, target_conf = read(target)
+        self.set_audio(target, source_audio, source_conf)
+        self.set_audio(source, target_audio, target_conf)
         self.pairing_changed.emit()
         event.accept()
 
@@ -1724,7 +1737,13 @@ class MainWindow(QMainWindow):
         if self._audio_folder:
             roots.append(Path(self._audio_folder))
         else:
-            roots += [Path(p).parent for p in self._current_paths()]
+            # Many texts usually share a folder, so walk each one once.
+            seen_roots: set[str] = set()
+            for path in self._current_paths():
+                parent = Path(path).parent
+                if str(parent) not in seen_roots:
+                    seen_roots.add(str(parent))
+                    roots.append(parent)
 
         recursive = self.recursive_cb.isChecked()
         found: list[str] = []
@@ -1950,9 +1969,26 @@ class MainWindow(QMainWindow):
         )
 
     def _on_clear_audio(self):
-        rows = self.table.selected_rows() or range(self.table.rowCount())
+        rows = self.table.selected_rows()
+        if not rows:
+            # Clearing everything by accident would throw away all the manual
+            # pairing, so an empty selection asks rather than assuming.
+            paired = sum(1 for _, a in self.table.pairs() if a)
+            if not paired:
+                self.statusBar().showMessage("No audio assigned.")
+                return
+            answer = QMessageBox.question(
+                self, "Clear all audio?",
+                f"Nothing is selected. Unassign the audio from all {paired} "
+                f"paired row(s)?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+            rows = list(range(self.table.rowCount()))
         self.table.clear_audio(list(rows))
-        self.statusBar().showMessage("Audio unassigned.")
+        self.statusBar().showMessage(f"Audio unassigned from {len(rows)} row(s).")
 
     def _on_remove_selected(self):
         for row in reversed(self.table.selected_rows()):
@@ -2259,14 +2295,26 @@ class MainWindow(QMainWindow):
                     "(Combined Text mode). Your source files are unchanged."
                 )
         if result.failures:
-            lines.append(f"\n{result.n_skipped} file(s) were skipped:")
+            lines.append(
+                f"\n{result.n_skipped} text(s) could not be read and are not "
+                f"in the output:")
             lines += [f"  • {p.name}: {m}" for p, m in result.failures[:10]]
+        audio_failures = getattr(result, "audio_failures", [])
+        if audio_failures:
+            lines.append(
+                f"\n{len(audio_failures)} recording(s) could not be read. The "
+                f"texts are still in the output, but without timing:")
+            lines += [f"  • {p.name}: {m}" for p, m in audio_failures[:10]]
+        for warning in getattr(result, "audio_warnings", []):
+            lines.append(f"\n⚠ {warning}")
         if result.warnings:
             lines.append("\nNotes:")
             lines += [f"  • {w}" for w in result.warnings[:10]]
 
+        problems = (result.failures or result.warnings or audio_failures
+                    or getattr(result, "audio_warnings", []))
         box = QMessageBox(self)
-        box.setIcon(QMessageBox.Icon.Warning if (result.failures or result.warnings)
+        box.setIcon(QMessageBox.Icon.Warning if problems
                     else QMessageBox.Icon.Information)
         box.setWindowTitle("Done")
         box.setText("\n".join(lines))

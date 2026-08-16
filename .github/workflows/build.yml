@@ -12,6 +12,11 @@ name: Build portable app
 # ffmpeg is bundled because combined mode can measure and join the recordings
 # matched to each text. Everything else in the app is pure XML and runs
 # without it, so its absence degrades rather than breaks.
+#
+# Python is pinned to 3.12 deliberately: pydub imports the stdlib `audioop`
+# module, which PEP 594 removed in 3.13. Do not bump this without either
+# replacing pydub or vendoring an audioop shim — the build will succeed and
+# the app will fail at runtime the moment it touches audio.
 
 on:
   push:

@@ -21,7 +21,12 @@ class CombineResult:
         self.n_texts = 0
         self.n_paragraphs = 0
         self.n_phrases = 0
+        # Texts that could not be parsed, and so are absent from the output.
         self.failures: list[tuple[Path, str]] = []
+        # Recordings that could not be read. Kept apart from `failures` because
+        # the text still made it into the output — only its timing did not.
+        self.audio_failures: list[tuple[Path, str]] = []
+        self.audio_warnings: list[str] = []
         self.warnings: list[str] = []
         self.audio_file = ""
         self.audio_ms = 0
@@ -88,10 +93,34 @@ class CombineWorker(QObject):
         if not matched:
             return {}
 
-        if not self.options.get("join_audio"):
+        joining = bool(self.options.get("join_audio"))
+
+        # Check once, up front. Without this every recording fails the same way
+        # and, when only measuring, the run would quietly fall back to
+        # estimating durations from annotations — the very drift the user chose
+        # this mode to avoid.
+        if not au.have_ffmpeg():
+            message = (
+                "ffmpeg was not found, so recordings cannot be "
+                f"{'joined' if joining else 'measured'}.\n\n"
+                "Install ffmpeg system-wide, or place a binary in the bin/ "
+                "folder next to this app."
+            )
+            if joining:
+                self.error.emit(message + "\n\nNothing was written.")
+                return None
+            result.audio_warnings.append(
+                message.replace("\n\n", " ")
+                + " Text lengths were estimated from each text's last "
+                  "annotation instead, which drifts for texts annotated in "
+                  "utterances with gaps."
+            )
+            return {}
+
+        if not joining:
             self.progress.emit(0, "Measuring recordings…")
             durations, failures = au.probe_durations([a for _, a in matched])
-            result.failures += failures
+            result.audio_failures += failures
             return {flex: durations[aud] for flex, aud in matched
                     if aud in durations}
 
@@ -102,7 +131,11 @@ class CombineWorker(QObject):
                 gap_ms=self.options.get("gap_ms", au.SEPARATOR_MS),
                 progress=lambda i, name: self.progress.emit(
                     i, f"Joining audio: {name}…"),
+                cancelled=lambda: self._cancelled,
             )
+        except au.AudioCancelled as exc:
+            self.error.emit(f"{exc} Nothing was written.")
+            return None
         except au.AudioError as exc:
             self.error.emit(
                 f"The audio could not be joined, so nothing was written.\n\n"

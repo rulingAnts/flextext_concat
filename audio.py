@@ -31,6 +31,10 @@ class AudioError(Exception):
     """Audio could not be read, joined, or ffmpeg is unavailable."""
 
 
+class AudioCancelled(AudioError):
+    """The caller asked to stop partway through; nothing was written."""
+
+
 # ---------------------------------------------------------------------------
 # Binary discovery
 # ---------------------------------------------------------------------------
@@ -154,18 +158,23 @@ def _click_segment():
 
 def join_audio(paths: list[str], output: str, *, gap_ms: int = SEPARATOR_MS,
                use_click: bool = True, sample_width: int = 2,
-               progress=None) -> tuple[list[int], int]:
+               progress=None, cancelled=None) -> tuple[list[int], int]:
     """
     Concatenate audio files, returning (durations_ms, actual_gap_ms).
 
     Both numbers are measured from the rendered audio rather than assumed, so
     offsets computed from them land exactly.  The separator in particular is
-    not its nominal length: a 5 ms click at 44.1 kHz is 220 frames, i.e. 4.988
-    ms, so the click separator really occupies 1004 ms rather than 1005.  Using
-    the nominal figure would push every text one millisecond further out than
-    the audio actually goes.
+    not always its nominal length — a 5 ms click at 44.1 kHz is 220 frames —
+    and using the nominal figure would push every text slightly past where the
+    audio really goes.
 
-    `progress(i, name)` is called before each file if given.
+    Raw frames are accumulated in a list and joined once at the end.  Repeatedly
+    doing `combined += segment` reallocates the whole buffer per file, which
+    copies on the order of n²: fifty four-minute texts would move about 27 GB
+    to produce a 1 GB result.
+
+    `progress(i, name)` is called before each file; `cancelled()` is polled
+    between files and raises AudioCancelled without writing anything.
     """
     configure()
     from pydub import AudioSegment
@@ -179,14 +188,16 @@ def join_audio(paths: list[str], output: str, *, gap_ms: int = SEPARATOR_MS,
         separator = AudioSegment.silent(duration=gap_ms, frame_rate=STD_RATE)
     else:
         separator = None
+    if separator is not None:
+        separator = separator.set_sample_width(sample_width) \
+                             .set_channels(STD_CHANNELS)
 
-    combined = (AudioSegment.empty()
-                .set_frame_rate(STD_RATE)
-                .set_channels(STD_CHANNELS)
-                .set_sample_width(sample_width))
-
+    chunks: list[bytes] = []
     durations: list[int] = []
     for i, path in enumerate(paths):
+        if cancelled and cancelled():
+            raise AudioCancelled(
+                f"Cancelled after {i} of {len(paths)} recording(s).")
         if progress:
             progress(i, Path(path).name)
         try:
@@ -201,10 +212,15 @@ def join_audio(paths: list[str], output: str, *, gap_ms: int = SEPARATOR_MS,
             seg = seg.set_sample_width(sample_width)
 
         durations.append(len(seg))
-        combined += seg
+        chunks.append(seg.raw_data)
         if separator is not None and i < len(paths) - 1:
-            combined += separator
+            chunks.append(separator.raw_data)
 
+    if cancelled and cancelled():
+        raise AudioCancelled("Cancelled before writing.")
+
+    combined = AudioSegment(data=b"".join(chunks), sample_width=sample_width,
+                            frame_rate=STD_RATE, channels=STD_CHANNELS)
     try:
         combined.export(output, format="wav")
     except Exception as exc:
