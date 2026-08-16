@@ -38,6 +38,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QRadioButton,
+    QScrollArea,
     QSizePolicy,
     QSpinBox,
     QSplitter,
@@ -908,7 +909,20 @@ class CombinedOptionsPanel(QWidget):
         self.audio_note = warning
         layout.addWidget(warning)
 
-        # ── Audio segmentation ───────────────────────────────────────────────
+        # Two columns — text options left, audio options right — so combined
+        # mode stays short enough to fit on laptop screens. A single column
+        # crushed the shift options into overlapping rows on smaller displays.
+        columns = QHBoxLayout()
+        columns.setSpacing(18)
+        text_col = QVBoxLayout()
+        text_col.setSpacing(6)
+        audio_col = QVBoxLayout()
+        audio_col.setSpacing(6)
+        columns.addLayout(text_col, 1)
+        columns.addLayout(audio_col, 1)
+        layout.addLayout(columns)
+
+        # ── Audio segmentation (right column) ───────────────────────────────
         audio_row = QHBoxLayout()
         audio_row.addWidget(QLabel("Audio segmentation:"))
         self.audio_combo = QComboBox()
@@ -925,7 +939,7 @@ class CombinedOptionsPanel(QWidget):
         self.audio_combo.currentIndexChanged.connect(self._on_audio_mode_changed)
         audio_row.addWidget(self.audio_combo)
         audio_row.addStretch()
-        layout.addLayout(audio_row)
+        audio_col.addLayout(audio_row)
 
         self.shift_box = QWidget()
         shift_layout = QVBoxLayout(self.shift_box)
@@ -1002,7 +1016,8 @@ class CombinedOptionsPanel(QWidget):
         media_row.addWidget(media_browse)
         shift_layout.addLayout(media_row)
 
-        layout.addWidget(self.shift_box)
+        audio_col.addWidget(self.shift_box)
+        audio_col.addStretch()
 
         title_row = QHBoxLayout()
         title_row.addWidget(QLabel("Title:"))
@@ -1018,7 +1033,7 @@ class CombinedOptionsPanel(QWidget):
             "Populated from the languages found in the loaded files."
         )
         title_row.addWidget(self.lang_combo)
-        layout.addLayout(title_row)
+        text_col.addLayout(title_row)
 
         self.title_notes_cb = QCheckBox(
             "Add each source text's title as a note on its first line")
@@ -1028,7 +1043,7 @@ class CombinedOptionsPanel(QWidget):
             "Note line. A paragraph cannot carry a title of its own, so the\n"
             "note is attached to the paragraph's first phrase."
         )
-        layout.addWidget(self.title_notes_cb)
+        text_col.addWidget(self.title_notes_cb)
 
         segnum_row = QHBoxLayout()
         segnum_row.addWidget(QLabel("Line numbers (segnum):"))
@@ -1049,7 +1064,7 @@ class CombinedOptionsPanel(QWidget):
         )
         segnum_row.addWidget(self.segnum_combo)
         segnum_row.addStretch()
-        layout.addLayout(segnum_row)
+        text_col.addLayout(segnum_row)
 
         self.strip_notes_cb = QCheckBox(
             "Strip audio timestamp notes (e.g. “audio ~0:00.000–0:02.421”)")
@@ -1058,8 +1073,8 @@ class CombinedOptionsPanel(QWidget):
             "Removes note items whose entire content is an audio timestamp.\n"
             "Notes that mix real commentary with a timestamp are left alone."
         )
-        layout.addWidget(self.strip_notes_cb)
-        layout.addStretch()
+        text_col.addWidget(self.strip_notes_cb)
+        text_col.addStretch()
 
         self._on_audio_mode_changed()
         self._on_join_audio_toggled(self.join_audio_cb.isChecked())
@@ -1256,7 +1271,11 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("FLExText Concatenator")
-        self.setMinimumSize(820, 760)
+        # Small minimum + generous default: the content sits in a scroll area,
+        # so a cramped window (or a high-DPI laptop at 125 % scaling) grows
+        # scrollbars instead of crushing widgets into each other.
+        self.setMinimumSize(720, 480)
+        self.resize(1080, 900)
         self._worker: Optional[CombineWorker] = None
         self._thread: Optional[QThread] = None
         # Parsed metadata per path, for list labels, title sorting and the
@@ -1275,10 +1294,15 @@ class MainWindow(QMainWindow):
 
     def _build_ui(self):
         central = QWidget()
-        self.setCentralWidget(central)
         root = QVBoxLayout(central)
         root.setSpacing(8)
         root.setContentsMargins(10, 10, 10, 10)
+
+        scroll = QScrollArea()
+        scroll.setWidget(central)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.setCentralWidget(scroll)
 
         # ── Load row ────────────────────────────────────────────────────────
         load_row = QHBoxLayout()
@@ -1359,6 +1383,8 @@ class MainWindow(QMainWindow):
         self._splitter.setStretchFactor(0, 3)
         self._splitter.setStretchFactor(1, 1)
         self._splitter.setChildrenCollapsible(False)
+        # Keep the table usable even when the scroll area is doing the work.
+        self.table.setMinimumHeight(180)
         root.addWidget(self._splitter, 1)
 
         list_btns = QHBoxLayout()
