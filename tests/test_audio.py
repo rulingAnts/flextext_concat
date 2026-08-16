@@ -60,6 +60,40 @@ def test_configure_without_ffmpeg_raises(monkeypatch):
         au.configure()
 
 
+def test_missing_audioop_explains_the_python_version(monkeypatch):
+    """
+    pydub imports the stdlib `audioop`, removed in Python 3.13. The bare
+    ModuleNotFoundError names a third-party dependency and says nothing about
+    what to do, so it is translated.
+    """
+    import builtins
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "pydub":
+            raise ModuleNotFoundError("No module named 'audioop'",
+                                      name="audioop")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    with pytest.raises(au.AudioError, match="removed the 'audioop' module"):
+        au.configure()
+
+
+def test_missing_pydub_is_reported_separately(monkeypatch):
+    import builtins
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "pydub":
+            raise ModuleNotFoundError("No module named 'pydub'", name="pydub")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    with pytest.raises(au.AudioError, match="pydub is not installed"):
+        au.configure()
+
+
 def test_have_ffmpeg_reflects_discovery(monkeypatch):
     monkeypatch.setattr(au, "find_binary", lambda name: None)
     assert au.have_ffmpeg() is False

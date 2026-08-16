@@ -30,6 +30,13 @@ concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # Pinned, not merely current. pydub imports the stdlib `audioop`, which PEP
+  # 594 removed in 3.13; on 3.13+ the build succeeds and the app fails the
+  # moment it touches audio. Both jobs read this one value so they cannot
+  # drift apart. Raising it requires replacing pydub first.
+  PYTHON_VERSION: '3.12'
+
 jobs:
   test:
     name: Tests
@@ -38,7 +45,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: ${{ env.PYTHON_VERSION }}
       - name: Install dependencies
         run: pip install -r requirements.txt pytest
       # The merge engine has no Qt dependency, so it tests on a bare runner.
@@ -63,7 +70,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: ${{ env.PYTHON_VERSION }}
 
       - uses: actions/setup-node@v4
         with:

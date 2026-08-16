@@ -77,7 +77,19 @@ def configure() -> tuple[str | None, str | None]:
     """
     try:
         from pydub import AudioSegment
-    except ImportError as exc:
+    except ModuleNotFoundError as exc:
+        # pydub imports the stdlib `audioop`, which PEP 594 removed in Python
+        # 3.13. Without this the failure surfaces as a bare "No module named
+        # 'audioop'" from inside a third-party package, which says nothing
+        # about what to do.
+        if exc.name == "audioop":
+            raise AudioError(
+                f"This build runs Python {sys.version_info.major}."
+                f"{sys.version_info.minor}, which removed the 'audioop' module "
+                f"that pydub depends on.\n\n"
+                "Audio cannot be measured or joined. Use Python 3.12 or "
+                "earlier, or install the 'audioop-lts' backport."
+            ) from exc
         raise AudioError(
             "pydub is not installed, so audio cannot be read or joined.\n\n"
             "Install it with:  pip install pydub"

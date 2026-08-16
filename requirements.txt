@@ -1,4 +1,15 @@
 PySide6
 PyYAML
-pydub
+
+# Audio support (combined mode only: measuring and joining recordings).
+#
+# pydub 0.25.1 is the last release (2021) and is effectively unmaintained.
+# It imports the stdlib `audioop`, which PEP 594 REMOVED in Python 3.13, so
+# this app requires Python <= 3.12 for anything audio. Pinned rather than
+# floating because an unmaintained package's next release, if it ever comes,
+# is more likely to break than to help.
+#
+# On Python 3.13+ the `audioop-lts` backport restores the module, but that is
+# a workaround, not the fix — replacing pydub is. See CLAUDE.md.
+pydub==0.25.1
 numpy
