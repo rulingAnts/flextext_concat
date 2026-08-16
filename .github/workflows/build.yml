@@ -36,6 +36,25 @@ env:
   # moment it touches audio. Both jobs read this one value so they cannot
   # drift apart. Raising it requires replacing pydub first.
   PYTHON_VERSION: '3.12'
+  # The app imports only QtCore/QtGui/QtWidgets. Everything here is provably
+  # unused — and each build is launch-verified afterwards, which is the check
+  # that makes aggressive excludes safe (over-excluding builds cleanly and
+  # crashes on start).
+  EXCLUDE_FLAGS: >-
+    --exclude-module PySide6.QtQml
+    --exclude-module PySide6.QtQuick
+    --exclude-module PySide6.QtQuickWidgets
+    --exclude-module PySide6.QtNetwork
+    --exclude-module PySide6.QtDBus
+    --exclude-module PySide6.QtPdf
+    --exclude-module PySide6.QtOpenGL
+    --exclude-module PySide6.QtOpenGLWidgets
+    --exclude-module PySide6.QtWebEngineCore
+    --exclude-module PySide6.QtWebEngineWidgets
+    --exclude-module PySide6.QtMultimedia
+    --exclude-module PySide6.QtSvg
+    --exclude-module PySide6.QtPrintSupport
+    --exclude-module PySide6.QtTest
 
 jobs:
   test:
@@ -120,15 +139,19 @@ jobs:
           python -m PyInstaller
           --onedir --windowed --name flextext-concat
           --add-data "bin:bin"
+          $EXCLUDE_FLAGS
           app.py
 
       # Windows: onefile is the conventional single-exe distribution format.
+      # bash on Windows too, so $EXCLUDE_FLAGS word-splits the same way
       - name: Build — onefile + windowed (Windows)
         if: runner.os == 'Windows'
+        shell: bash
         run: >
           python -m PyInstaller
           --onefile --windowed --name flextext-concat
           --add-data "bin:bin"
+          $EXCLUDE_FLAGS
           app.py
 
       # Linux: onedir gives a directory tree that appimagetool can wrap.
@@ -142,7 +165,31 @@ jobs:
           python -m PyInstaller
           --onedir --name flextext-concat
           --add-data "bin:bin"
+          $EXCLUDE_FLAGS
           app.py
+
+      # ── Launch verification ────────────────────────────────────────────────
+      # A bundle that builds but cannot start must fail HERE, not on a user's
+      # machine. --smoke-test constructs the main window and exits 0.
+
+      - name: Smoke test (macOS)
+        if: runner.os == 'macOS'
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: ./dist/flextext-concat.app/Contents/MacOS/flextext-concat --smoke-test
+
+      - name: Smoke test (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: ./dist/flextext-concat.exe --smoke-test
+
+      - name: Smoke test (Linux)
+        if: runner.os == 'Linux'
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: ./dist/flextext-concat/flextext-concat --smoke-test
 
       # ── Package ────────────────────────────────────────────────────────────
 

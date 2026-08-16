@@ -134,14 +134,29 @@ def test_same_folder_wins_a_tie(tmp_path):
     assert m.match_one(flex, [far, near])[0] == near
 
 
-def test_several_candidates_in_folder_picks_closest_by_name(tmp_path):
+def test_several_unrelated_candidates_yield_no_match(tmp_path):
+    """
+    Two recordings beside the text, neither resembling its name: choosing one
+    would be arbitrary, so both are left for the user to assign by hand.
+    """
     flex = _mk(tmp_path, "d/Eti Makan Sabun.flextext")
     a = _mk(tmp_path, "d/Eti eats soap.enhanced.wav")
     b = _mk(tmp_path, "d/completely unrelated thing.wav")
 
     found, confidence = m.match_one(flex, [b, a])
-    assert found == a
-    assert confidence == m.BY_FOLDER
+    assert found is None
+    assert confidence is None
+
+
+def test_name_match_still_wins_among_several_candidates(tmp_path):
+    """Ambiguity only blocks the fallback, never a genuine name match."""
+    flex = _mk(tmp_path, "d/Crocodile Woman.flextext")
+    named = _mk(tmp_path, "d/2021 Barnabas Doi Crocodile Woman.m4a")
+    other = _mk(tmp_path, "d/something else entirely.wav")
+
+    found, confidence = m.match_one(flex, [other, named])
+    assert found == named
+    assert confidence == m.BY_NAME
 
 
 def test_match_audio_with_confidence_shape(tmp_path):

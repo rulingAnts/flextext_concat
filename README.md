@@ -71,8 +71,11 @@ never touched.
 ## Features
 
 - Load a folder of `.flextext` files, optionally including subfolders
+  (`.flextext` only; ELAN `.eaf` is not supported — export as FLExText instead)
 - **Pair each text with its recording** in a two-column table — fuzzy auto-matching,
-  drag to re-pair, audio in the same folder by default or a folder of its own
+  drag to re-pair, audio in the same folder by default or a folder of its own; an
+  **Unmatched audio** pane lists recordings no text is using, for drag-on manual
+  pairing, with a file picker to pull in recordings from anywhere
 - Add individual files, drag files in from the file manager, remove or clear
 - Drag-and-drop reordering with multi-select (Shift+Click, Ctrl/Cmd+Click)
 - **Simple sort** — by filename, numerical order, text title, or date
@@ -82,6 +85,7 @@ never touched.
 - Save and load all settings as commented YAML
 - Non-blocking merge on a background thread, with progress and cancel
 - A malformed file is skipped and reported rather than aborting the whole run
+- Outputs are refused if they would overwrite any loaded source file
 - Works as a plain Python script or as a portable app (Windows, macOS, Linux)
 
 ---

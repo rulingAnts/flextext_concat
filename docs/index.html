@@ -390,8 +390,10 @@
     <tbody>
       <tr><td><strong>Load Folder&hellip;</strong></td>
           <td>Replaces the list with every <code>.flextext</code> file in a
-              folder. With <strong>Include subfolders</strong> ticked it
-              searches the whole tree beneath it.</td></tr>
+              folder (only <code>.flextext</code> &mdash; stray <code>.xml</code>
+              files are ignored, and ELAN <code>.eaf</code> is not supported).
+              With <strong>Include subfolders</strong> ticked it searches the
+              whole tree beneath it.</td></tr>
       <tr><td><strong>Add Files&hellip;</strong></td>
           <td>Adds individual files to the existing list.</td></tr>
       <tr><td><strong>Drag and drop</strong></td>
@@ -446,6 +448,10 @@
               adds them to the list instead.</td></tr>
       <tr><td><strong>Match Audio</strong></td>
           <td>Re-suggests a recording for every row.</td></tr>
+      <tr><td><strong>Unmatched audio pane</strong></td>
+          <td>Every recording found that no text is using. Drag one onto a
+              text's row to pair them. <strong>Add Audio Files&hellip;</strong>
+              brings recordings in from anywhere on disk.</td></tr>
       <tr><td><strong>Audio Folder&hellip;</strong></td>
           <td>Where to look for recordings. By default this is each text's own
               folder; set it when your audio lives elsewhere.</td></tr>
@@ -461,9 +467,12 @@
   <div class="callout tip">
     When the names have nothing in common &mdash; audio titled in a different
     language from the text, like <code>Eti&nbsp;Makan&nbsp;Sabun.flextext</code>
-    beside <code>Eti&nbsp;eats&nbsp;soap.wav</code> &mdash; the app falls back to
-    what is sitting in the same folder. Those guesses are marked with
-    <strong>?</strong>: they are the ones worth checking.
+    beside <code>Eti&nbsp;eats&nbsp;soap.wav</code> &mdash; a recording is
+    suggested only when it is the <em>only</em> one in the text's folder, and it
+    is marked with <strong>?</strong> for you to confirm. When a folder holds
+    several recordings and none resemble the text's name, the app does not
+    guess: they appear in the <strong>Unmatched audio</strong> pane instead,
+    and you drag the right one onto the text.
   </div>
 
   <div class="callout warn">
@@ -595,8 +604,15 @@
   <h2 id="faq">FAQ</h2>
 
   <h3>Will this modify my original files?</h3>
-  <p>No. Every mode reads the sources and writes a new file. If a combined text
-  is not what you wanted, re-run in corpus mode.</p>
+  <p>No. Every mode reads the sources and writes a new file, and the app
+  refuses to write its output over any loaded source &mdash; even the same file
+  reached by a different path. If a combined text is not what you wanted,
+  re-run in corpus mode.</p>
+
+  <h3>Can it read ELAN <code>.eaf</code> files?</h3>
+  <p>Not yet. An <code>.eaf</code> is XML, but its tiers are free-form &mdash;
+  supporting it would need a manual tier-to-writing-system mapping step. Export
+  from ELAN as FLExText (<code>.flextext</code>) instead.</p>
 
   <h3>My text imports into FLEx completely blank.</h3>
   <p>Almost always missing writing systems. A <code>.flextext</code> import will

@@ -40,6 +40,7 @@ from PySide6.QtWidgets import (
     QRadioButton,
     QSizePolicy,
     QSpinBox,
+    QSplitter,
     QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -310,6 +311,44 @@ class DraggableListWidget(QListWidget):
             self.item(adjusted + offset).setSelected(True)
 
         event.accept()
+
+
+# ---------------------------------------------------------------------------
+# Unmatched-audio pane
+# ---------------------------------------------------------------------------
+
+class UnmatchedAudioList(QListWidget):
+    """
+    Recordings found in the audio folder(s) that no text currently uses.
+
+    Dragging an entry onto a row of the pairing table assigns it — the drag
+    carries a file URL, so the table's normal external-drop path handles it
+    and nothing here needs to know about rows.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.setDragEnabled(True)
+        self.setDragDropMode(QAbstractItemView.DragDropMode.DragOnly)
+        self.setToolTip(
+            "Recordings not assigned to any text.\n"
+            "Drag one onto a text's row to pair them.")
+
+    def mimeData(self, items):
+        from PySide6.QtCore import QMimeData, QUrl
+        data = QMimeData()
+        data.setUrls([QUrl.fromLocalFile(i.data(Qt.ItemDataRole.UserRole))
+                      for i in items])
+        return data
+
+    def set_paths(self, paths: list[str]):
+        self.clear()
+        for path in paths:
+            item = QListWidgetItem(Path(path).name)
+            item.setData(Qt.ItemDataRole.UserRole, path)
+            item.setToolTip(path)
+            self.addItem(item)
 
 
 # ---------------------------------------------------------------------------
@@ -1227,6 +1266,9 @@ class MainWindow(QMainWindow):
         # Empty means "look beside each text", which is how these corpora are
         # normally laid out; set only when the audio lives somewhere else.
         self._audio_folder = ""
+        # Recordings the user added by hand via "Add Audio Files…" — kept
+        # apart from the folder scan so a rescan cannot silently drop them.
+        self._extra_audio: set[str] = set()
         self._build_ui()
 
     # ── Construction ─────────────────────────────────────────────────────────
@@ -1284,17 +1326,40 @@ class MainWindow(QMainWindow):
         audio_row.addWidget(self.clear_audio_btn)
         root.addLayout(audio_row)
 
-        # ── Pairing table ────────────────────────────────────────────────────
+        # ── Pairing table + unmatched-audio pane ─────────────────────────────
         self.table = PairingTable()
         self.table.texts_dropped.connect(self._on_files_dropped)
         self.table.pairing_changed.connect(self._refresh_counts)
         self.table.setToolTip(
             "Drag files here from your file manager.\n"
             "Drag in the left column to reorder texts (the audio follows).\n"
-            "Drag in the right column to move a recording to another text.\n"
+            "Drag in the right column to swap a recording with another text's.\n"
+            "Drag from the Unmatched audio pane to assign a recording.\n"
             "Double-click a recording to pick a different file."
         )
-        root.addWidget(self.table, 1)
+
+        self.unmatched_panel = QWidget()
+        unmatched_layout = QVBoxLayout(self.unmatched_panel)
+        unmatched_layout.setContentsMargins(0, 0, 0, 0)
+        unmatched_layout.setSpacing(4)
+        self.unmatched_label = QLabel("<b>Unmatched audio</b>")
+        unmatched_layout.addWidget(self.unmatched_label)
+        self.unmatched_list = UnmatchedAudioList()
+        unmatched_layout.addWidget(self.unmatched_list, 1)
+        self.add_audio_btn = QPushButton("Add Audio Files…")
+        self.add_audio_btn.setToolTip(
+            "Add recordings from anywhere on disk to this pane,\n"
+            "then drag them onto texts to pair them.")
+        self.add_audio_btn.clicked.connect(self._on_add_audio_files)
+        unmatched_layout.addWidget(self.add_audio_btn)
+
+        self._splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._splitter.addWidget(self.table)
+        self._splitter.addWidget(self.unmatched_panel)
+        self._splitter.setStretchFactor(0, 3)
+        self._splitter.setStretchFactor(1, 1)
+        self._splitter.setChildrenCollapsible(False)
+        root.addWidget(self._splitter, 1)
 
         list_btns = QHBoxLayout()
         remove_btn = QPushButton("Remove Selected")
@@ -1730,6 +1795,17 @@ class MainWindow(QMainWindow):
         self.combined_panel.set_languages(
             fx.collect_languages(infos), fx.default_title_lang(infos)
         )
+        self._refresh_unmatched()
+
+    def _refresh_unmatched(self):
+        """The pane shows every known recording no text is currently using."""
+        assigned = {a for _, a in self.table.pairs() if a}
+        available = sorted(set(self._audio_pool()) - assigned,
+                           key=lambda p: Path(p).name.lower())
+        self.unmatched_list.set_paths(available)
+        self.unmatched_label.setText(
+            f"<b>Unmatched audio</b> ({len(available)})" if available
+            else "<b>Unmatched audio</b>")
 
     def _audio_pool(self) -> list[str]:
         """Every candidate recording, from the audio folder or beside the texts."""
@@ -1758,7 +1834,23 @@ class MainWindow(QMainWindow):
                         and path.suffix.lower() in audio.AUDIO_EXTENSIONS):
                     seen.add(key)
                     found.append(key)
+        found += [p for p in self._extra_audio if p not in seen]
         return sorted(found)
+
+    def _on_add_audio_files(self):
+        """Bring recordings from anywhere on disk into the unmatched pane."""
+        paths, _ = QFileDialog.getOpenFileNames(
+            self, "Add recordings to the unmatched pane", "",
+            "Audio files (*" + " *".join(sorted(audio.AUDIO_EXTENSIONS))
+            + ");;All files (*)",
+        )
+        if not paths:
+            return
+        self._extra_audio.update(paths)
+        self._refresh_unmatched()
+        self.statusBar().showMessage(
+            f"Added {len(paths)} recording(s) to the unmatched pane — "
+            "drag them onto texts to pair them.")
 
     def _automatch(self, paths: list[str]):
         """Suggest audio for the given texts, leaving manual choices alone."""
@@ -1852,6 +1944,7 @@ class MainWindow(QMainWindow):
                            self.clear_audio_btn):
                 widget.setEnabled(combining)
             self.table.setColumnHidden(PairingTable.AUDIO_COL, not combining)
+            self.unmatched_panel.setVisible(combining)
 
     def _output_mode(self) -> str:
         return "combined" if self._radio_combined.isChecked() else "corpus"
@@ -1900,7 +1993,7 @@ class MainWindow(QMainWindow):
     def _on_add_files(self):
         paths, _ = QFileDialog.getOpenFileNames(
             self, "Add .flextext files", "",
-            "FLExText files (*.flextext *.xml);;All files (*)",
+            "FLExText files (*.flextext);;All files (*)",
         )
         if paths:
             added, _ = self._add_paths(paths)
@@ -2109,6 +2202,32 @@ class MainWindow(QMainWindow):
             return "corpus"
         return None
 
+    def _output_collision(self, output: str) -> str | None:
+        """Name the source file an output path would overwrite, if any."""
+        def canon(p) -> str:
+            try:
+                return str(Path(p).resolve()).lower()
+            except OSError:
+                return str(p).lower()
+
+        sources = {canon(t) for t, _ in self.table.pairs()}
+        sources |= {canon(a) for _, a in self.table.pairs() if a}
+
+        candidates = [("The output file", output)]
+        if (self._output_mode() == "combined"
+                and self.combined_panel.audio_mode == fx.AUDIO_SHIFT
+                and self.combined_panel.join_audio_cb.isChecked()):
+            candidates.append(
+                ("The joined-audio file",
+                 self.combined_panel.media_edit.text().strip()))
+
+        for label, path in candidates:
+            if path and canon(path) in sources:
+                return (f"{label} is one of the loaded source files:\n\n{path}"
+                        f"\n\nWriting it would destroy that source. Choose a "
+                        f"different path.")
+        return None
+
     def _confirm_unmatched(self) -> bool:
         """
         Ask before combining when some texts have no recording, or when one
@@ -2172,6 +2291,13 @@ class MainWindow(QMainWindow):
         if not output:
             QMessageBox.warning(
                 self, "No output path", "Choose an output file path first.")
+            return
+
+        # The worker refuses these too, but catching it here puts the error
+        # next to the field the user needs to change.
+        clash = self._output_collision(output)
+        if clash:
+            QMessageBox.warning(self, "Output would overwrite a source", clash)
             return
 
         mode = self._output_mode()
@@ -2355,6 +2481,17 @@ class MainWindow(QMainWindow):
 def main():
     app = QApplication.instance() or QApplication(sys.argv)
     window = MainWindow()
+
+    # Hidden flag used by CI and the release process to prove a built bundle
+    # actually starts. PyInstaller excludes are tuned aggressively (see
+    # build.yml), and an over-excluded bundle builds cleanly then dies on
+    # launch — this is the check that catches it.
+    if "--smoke-test" in sys.argv:
+        window.show()
+        print(f"SMOKE-OK {window.windowTitle()} "
+              f"rows={window.table.rowCount()}")
+        return
+
     window.show()
     sys.exit(app.exec())
 

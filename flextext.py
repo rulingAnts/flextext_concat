@@ -29,7 +29,12 @@ from pathlib import Path
 # Constants
 # ---------------------------------------------------------------------------
 
-FLEXTEXT_EXTENSIONS = {".flextext", ".xml"}
+# .flextext only, deliberately. Generic .xml drags in every stray XML file in
+# a working corpus (a real one had 24), each failing with a confusing error.
+# ELAN .eaf is NOT supported: an EAF is XML but its root is ANNOTATION_DOCUMENT
+# with free-form tiers, so support would need a manual tier -> writing-system
+# mapping UI. parse_file already rejects it with a readable message.
+FLEXTEXT_EXTENSIONS = {".flextext"}
 
 # Attributes on <phrase> that carry audio segmentation.  All are optional in the
 # schema and are written mainly by ELAN and SayMore rather than by FLEx itself.

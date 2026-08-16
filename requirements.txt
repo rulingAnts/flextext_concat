@@ -1,4 +1,8 @@
-PySide6
+# Essentials only: the app imports QtCore, QtGui and QtWidgets. The plain
+# 'PySide6' metapackage also installs PySide6-Addons (WebEngine, Multimedia,
+# Pdf, Charts…), which PyInstaller happily bundles — that alone put ~300 MB
+# of unused Qt into the v0.1.0 macOS build (506 MB unpacked).
+PySide6-Essentials
 PyYAML
 
 # Audio support (combined mode only: measuring and joining recordings).

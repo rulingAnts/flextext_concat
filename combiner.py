@@ -149,10 +149,46 @@ class CombineWorker(QObject):
         result.audio_file = output
         return {flex: length for (flex, _), length in zip(matched, lengths)}
 
+    def _collision(self) -> str | None:
+        """
+        Refuse to write an output over any input.
+
+        The app promises in several places that source files are never
+        modified; that must hold even when an output path happens to point at
+        a source. resolve() catches the same file reached via a different
+        route (relative path, symlink, case-insensitive filesystem).
+        """
+        def canon(p) -> str:
+            try:
+                resolved = Path(p).resolve()
+            except OSError:
+                resolved = Path(p)
+            # macOS and Windows filesystems are case-insensitive by default.
+            return str(resolved).lower()
+
+        sources = {canon(p): p for p in self.file_paths}
+        for a in (self.options.get("audio_paths") or {}).values():
+            if a:
+                sources[canon(a)] = a
+
+        for label, out in (("output file", self.output_file),
+                           ("joined audio", self.options.get("media_location")
+                            if self.options.get("join_audio") else None)):
+            if out and canon(out) in sources:
+                return (f"The {label} path is one of the source files:\n\n"
+                        f"{out}\n\nWriting it would destroy that source. "
+                        f"Choose a different path.")
+        return None
+
     def _run(self) -> CombineResult | None:
         total = len(self.file_paths)
         if not total:
             self.error.emit("No files to combine.")
+            return None
+
+        clash = self._collision()
+        if clash:
+            self.error.emit(clash)
             return None
 
         result = CombineResult(self.output_file)

@@ -137,14 +137,14 @@ def match_one(flextext_path: str, audio_paths: list[str],
 
     siblings = [a for a in audio_paths
                 if Path(a).parent == Path(flextext_path).parent]
-    if not siblings:
-        return None, None
     if len(siblings) == 1:
+        # Exactly one recording beside the text: not a name match, but not a
+        # guess among alternatives either. Flagged for the user to confirm.
         return siblings[0], BY_FOLDER
-    # Several candidates beside the text: take the closest by name, still weak.
-    best = max(siblings,
-               key=lambda a: score(Path(flextext_path).stem, Path(a).stem))
-    return best, BY_FOLDER
+    # Zero, or several with none resembling the text's name: suggesting one
+    # would be picking arbitrarily and dressing it as a match. The unmatched
+    # recordings are shown in the audio pane for the user to assign by hand.
+    return None, None
 
 
 def match_audio(flextext_paths: list[str], audio_paths: list[str],
