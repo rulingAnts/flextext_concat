@@ -340,37 +340,33 @@
     </div>
 
     <div class="tab-panel active" id="tab-mac">
-      <p>The app is not signed with an Apple Developer certificate, so macOS
-      quarantines it. Either route below clears that; you only do it once per
-      download.</p>
-
-      <p><strong>Easiest &mdash; the included script</strong></p>
       <ol>
-        <li>Unzip the download. Alongside the app is
-            <code>Remove&nbsp;Quarantine.applescript</code>.</li>
+        <li>Open the downloaded <code>.dmg</code>. A disk image appears with a
+            single file inside:
+            <code>Install&nbsp;FLExText&nbsp;Concatenator.applescript</code>.</li>
         <li>Double-click it &mdash; it opens in Script Editor.</li>
-        <li>Press <strong>Run</strong> (or <kbd>&#8984;R</kbd>) and answer
-            <strong>Yes</strong>.</li>
+        <li>Press the <strong>Run</strong> button (&#9654;, or
+            <kbd>&#8984;R</kbd>) and answer <strong>Yes</strong>.</li>
       </ol>
+      <p>It clears the quarantine flag, copies the app into Applications, and
+      ejects the disk image. Launch it from Applications or Launchpad
+      afterwards &mdash; no security warnings.</p>
+
       <div class="callout tip">
-        That file is a script <em>document</em>, not an application, so
-        Gatekeeper does not block it the way it blocks the app &mdash; Script
-        Editor does the running, and it is already trusted. You can read the
-        whole thing before running it; it is a few lines long and does one
-        thing.
+        <strong>Why an install script rather than the usual drag-to-Applications?</strong>
+        The app is not signed with an Apple Developer certificate, so macOS
+        quarantines it and refuses to open it. On recent macOS the warning
+        offers little except <em>Move&nbsp;to&nbsp;Trash</em>, which deletes
+        your download. The app is deliberately hidden inside the disk image so
+        that cannot happen by accident, and the script is a plain script
+        <em>document</em> &mdash; Script Editor runs it, and Script Editor is
+        already trusted, so nothing blocks it. You can read the whole script
+        before running it; it is short and does exactly three things.
       </div>
 
-      <p><strong>Or do it by hand</strong></p>
-      <ol>
-        <li>Double-click the app. macOS refuses to open it, or reports that it
-            is damaged (error &minus;47). That is Gatekeeper, not a corrupt
-            download.</li>
-        <li>Open <strong>System Settings &rarr; Privacy &amp; Security</strong>,
-            scroll to Security, and click <strong>Open Anyway</strong>.</li>
-        <li>Double-click the app again and confirm <strong>Open</strong>.</li>
-      </ol>
-      <p>Or in Terminal:</p>
-      <pre><code>xattr -dr com.apple.quarantine /path/to/flextext-concat.app</code></pre>
+      <p>Prefer to do it by hand? Copy the app out of the disk image (press
+      <kbd>&#8984;&#8679;.</kbd> in Finder to reveal it), then:</p>
+      <pre><code>xattr -dr com.apple.quarantine /Applications/flextext-concat.app</code></pre>
     </div>
 
     <div class="tab-panel" id="tab-win">

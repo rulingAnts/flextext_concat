@@ -142,7 +142,9 @@ jobs:
         run: >
           python -m PyInstaller
           --onedir --windowed --name flextext-concat
+          --icon assets/icon.icns
           --add-data "bin:bin"
+          --add-data "assets/icon.png:assets"
           $EXCLUDE_FLAGS
           app.py
 
@@ -154,7 +156,9 @@ jobs:
         run: >
           python -m PyInstaller
           --onefile --windowed --name flextext-concat
+          --icon assets/icon.ico
           --add-data "bin:bin"
+          --add-data "assets/icon.png:assets"
           $EXCLUDE_FLAGS
           app.py
 
@@ -169,6 +173,7 @@ jobs:
           python -m PyInstaller
           --onedir --name flextext-concat
           --add-data "bin:bin"
+          --add-data "assets/icon.png:assets"
           $EXCLUDE_FLAGS
           app.py
 
@@ -197,18 +202,22 @@ jobs:
 
       # ── Package ────────────────────────────────────────────────────────────
 
-      - name: Package — macOS → zip
+      # A DMG rather than a zip: the payload is hidden (leading dot) so nobody
+      # can double-click the app and hit Gatekeeper's "Move to Trash" dialog,
+      # and unlike a zip nothing is extracted — eject the image and no
+      # invisible app folder is left behind in Downloads.
+      - name: Package — macOS → dmg
         if: runner.os == 'macOS'
-        # -y stores symlinks as symlinks. PyInstaller .app bundles are full of
-        # them (framework Versions/ layout), and following them roughly DOUBLES
-        # the archive — v0.1.0 shipped 506 MB unpacked for ~250 MB of content.
         run: |
-          # Ship the unquarantine helper beside the app. It is a script
-          # DOCUMENT, not an applet, so Gatekeeper does not block it — a .app
-          # applet would be blocked exactly like the app itself.
-          cp "macos/Remove Quarantine.applescript" dist/
-          cd dist && zip -ry ../flextext-concat-macos-arm64.zip \
-            flextext-concat.app "Remove Quarantine.applescript"
+          mkdir -p dmgroot
+          mv dist/flextext-concat.app "dmgroot/.flextext-concat.app"
+          cp "macos/Install FLExText Concatenator.applescript" dmgroot/
+          hdiutil create \
+            -volname "FLExText Concatenator" \
+            -srcfolder dmgroot \
+            -ov -format UDZO \
+            flextext-concat-macos-arm64.dmg
+          hdiutil imageinfo flextext-concat-macos-arm64.dmg | head -5
 
       - name: Package — Windows → rename exe
         if: runner.os == 'Windows'
@@ -240,21 +249,7 @@ jobs:
           Categories=Office;Education;
           DESKTOP
 
-          # Minimal 256x256 PNG placeholder icon.
-          # Replace AppDir/flextext-concat.png with real artwork before shipping.
-          python3 -c "
-          import struct, zlib
-          def chunk(t, d):
-              c = t + d
-              return struct.pack('>I', len(d)) + c + struct.pack('>I', zlib.crc32(c) & 0xffffffff)
-          W = H = 256
-          raw = b''.join(b'\x00' + b'\x2d\x6a\x4f' * W for _ in range(H))
-          png = (b'\x89PNG\r\n\x1a\n'
-                 + chunk(b'IHDR', struct.pack('>IIBBBBB', W, H, 8, 2, 0, 0, 0))
-                 + chunk(b'IDAT', zlib.compress(raw))
-                 + chunk(b'IEND', b''))
-          open('AppDir/flextext-concat.png', 'wb').write(png)
-          "
+          cp assets/icon.png AppDir/flextext-concat.png
 
           wget -q \
             https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
@@ -267,7 +262,7 @@ jobs:
         if: runner.os == 'macOS'
         with:
           name: flextext-concat-macos-arm64
-          path: flextext-concat-macos-arm64.zip
+          path: flextext-concat-macos-arm64.dmg
 
       - uses: actions/upload-artifact@v4
         if: runner.os == 'Windows'
@@ -290,6 +285,6 @@ jobs:
         with:
           fail_on_unmatched_files: false
           files: |
-            flextext-concat-macos-arm64.zip
+            flextext-concat-macos-arm64.dmg
             flextext-concat-windows-x86_64.exe
             flextext-concat-linux-amd64.AppImage

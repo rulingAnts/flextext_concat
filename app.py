@@ -17,7 +17,7 @@ except ImportError:
     _HAS_YAML = False
 
 from PySide6.QtCore import Qt, QThread, Signal
-from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtGui import QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -2556,8 +2556,22 @@ class MainWindow(QMainWindow):
 # Entry point
 # ---------------------------------------------------------------------------
 
+def _icon_path() -> Path:
+    """The bundled icon, whether running frozen or straight from source."""
+    if getattr(sys, "frozen", False):
+        root = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
+    else:
+        root = Path(__file__).parent
+    return root / "assets" / "icon.png"
+
+
 def main():
     app = QApplication.instance() or QApplication(sys.argv)
+    # PyInstaller gives the bundle its icon, but the window/taskbar icon is
+    # separate — without this the app shows a generic Python icon while running.
+    icon = _icon_path()
+    if icon.is_file():
+        app.setWindowIcon(QIcon(str(icon)))
     window = MainWindow()
 
     # Hidden flag used by CI and the release process to prove a built bundle

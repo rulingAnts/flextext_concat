@@ -21,3 +21,6 @@ Thumbs.db
 
 # pytest
 .pytest_cache/
+
+# generated icon artifacts (rebuild with: python3 assets/make_icon.py)
+assets/icon.iconset/

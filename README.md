@@ -135,6 +135,7 @@ matching.py       Fuzzy .flextext ↔ audio filename matching (no Qt)
 audio.py          ffmpeg discovery, duration probing, concatenation
 bin/              Placeholder for the bundled ffmpeg binary
 tests/            pytest suite for the engine and the matcher
+macos/            Install script shipped inside the macOS .dmg
 docs/             GitHub Pages documentation site
 ```
 
