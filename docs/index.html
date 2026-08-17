@@ -340,19 +340,37 @@
     </div>
 
     <div class="tab-panel active" id="tab-mac">
+      <p>The app is not signed with an Apple Developer certificate, so macOS
+      quarantines it. Either route below clears that; you only do it once per
+      download.</p>
+
+      <p><strong>Easiest &mdash; the included script</strong></p>
       <ol>
-        <li>Unzip the download and drag <code>flextext-concat.app</code> to
-            Applications (or anywhere you like).</li>
-        <li>Double-click it. macOS will refuse to open it, or report that the
-            app is damaged (error &minus;47). This is Gatekeeper, not a real
-            problem with the file.</li>
-        <li>Open <strong>System Settings &rarr; Privacy &amp; Security</strong>,
-            scroll to the Security section, and click
-            <strong>Open Anyway</strong> next to the message about
-            flextext-concat.</li>
-        <li>Double-click the app again and confirm <strong>Open</strong>. It will
-            launch normally from then on.</li>
+        <li>Unzip the download. Alongside the app is
+            <code>Remove&nbsp;Quarantine.applescript</code>.</li>
+        <li>Double-click it &mdash; it opens in Script Editor.</li>
+        <li>Press <strong>Run</strong> (or <kbd>&#8984;R</kbd>) and answer
+            <strong>Yes</strong>.</li>
       </ol>
+      <div class="callout tip">
+        That file is a script <em>document</em>, not an application, so
+        Gatekeeper does not block it the way it blocks the app &mdash; Script
+        Editor does the running, and it is already trusted. You can read the
+        whole thing before running it; it is a few lines long and does one
+        thing.
+      </div>
+
+      <p><strong>Or do it by hand</strong></p>
+      <ol>
+        <li>Double-click the app. macOS refuses to open it, or reports that it
+            is damaged (error &minus;47). That is Gatekeeper, not a corrupt
+            download.</li>
+        <li>Open <strong>System Settings &rarr; Privacy &amp; Security</strong>,
+            scroll to Security, and click <strong>Open Anyway</strong>.</li>
+        <li>Double-click the app again and confirm <strong>Open</strong>.</li>
+      </ol>
+      <p>Or in Terminal:</p>
+      <pre><code>xattr -dr com.apple.quarantine /path/to/flextext-concat.app</code></pre>
     </div>
 
     <div class="tab-panel" id="tab-win">
