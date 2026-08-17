@@ -30,12 +30,29 @@
 --       open in it.
 --
 --  So this window closing on its own means it WORKED — it is not a crash,
---  and you will not be asked to save anything. If the window or the disk
---  image is still there afterwards, that is harmless: the app is already
---  installed, and you can close and eject them yourself.
+--  and you will not be asked to save anything.
 --
 --  Afterwards: open FLExText Concatenator from your Applications folder or
---  from Launchpad. You can delete the .dmg file you downloaded.
+--  from Launchpad.
+--
+--  ─────────────────────────────────────────────────────────────────────────
+--   IF ANYTHING IS LEFT OVER — how to finish by hand
+--  ─────────────────────────────────────────────────────────────────────────
+--
+--  macOS does not always let a script close the window it is running in, so
+--  this window or the disk image may still be here. That changes nothing
+--  about the installation — the app is already in your Applications folder.
+--  To tidy up yourself:
+--
+--    •  Close this window ......  press  Command-W
+--                                 (if asked whether to save, choose Don't Save)
+--    •  Quit Script Editor .....  press  Command-Q
+--    •  Eject the disk image ...  find "FLExText Concatenator" in the Finder
+--                                 sidebar, under Locations, and click the
+--                                 ⏏ button beside it — or drag it to the Trash
+--
+--  Then delete the .dmg file from your Downloads folder. Nothing is left
+--  behind after that.
 --
 --  ─────────────────────────────────────────────────────────────────────────
 --   WHY AN INSTALL SCRIPT AT ALL
@@ -126,7 +143,8 @@ end try
 -- the window was about to close.
 display dialog "✓  " & displayName & " is installed." & return & return & ¬
 	"Open it from your Applications folder or from Launchpad. You will not see any security warnings." & return & return & ¬
-	"When you close this box the script tidies up: the disk image ejects itself after a second or two, and this window closes. If anything is still open afterwards you can close it by hand — the app is already installed either way. You can delete the .dmg you downloaded." ¬
+	"When you close this box the script tidies up: the disk image ejects itself after a second or two, and this window closes." & return & return & ¬
+	"If either is still here afterwards, that is harmless — the app is already installed. To finish by hand: press Command-W to close this window (Don't Save), Command-Q to quit Script Editor, and click the ⏏ beside the disk image in the Finder sidebar. Then delete the .dmg from Downloads." ¬
 	buttons {"Show me", "Done"} default button "Show me" with title "Install " & displayName
 set choice to button returned of result
 
