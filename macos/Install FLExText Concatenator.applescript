@@ -25,13 +25,14 @@
 --
 --    •  Clears the macOS quarantine flag that blocks unsigned apps.
 --    •  Copies the app into your Applications folder.
---    •  Ejects the disk image.
---    •  Closes this document.
---    •  Quits Script Editor.
+--    •  Ejects the disk image (a second or two after you click Done).
+--    •  Closes this document, and quits Script Editor if nothing else is
+--       open in it.
 --
---  Because the last two are the script's own doing, this window will close
---  and Script Editor will quit on its own once it finishes. That means it
---  WORKED — it is not a crash, and you will not be asked to save anything.
+--  So this window closing on its own means it WORKED — it is not a crash,
+--  and you will not be asked to save anything. If the window or the disk
+--  image is still there afterwards, that is harmless: the app is already
+--  installed, and you can close and eject them yourself.
 --
 --  Afterwards: open FLExText Concatenator from your Applications folder or
 --  from Launchpad. You can delete the .dmg file you downloaded.
@@ -125,17 +126,9 @@ end try
 -- the window was about to close.
 display dialog "✓  " & displayName & " is installed." & return & return & ¬
 	"Open it from your Applications folder or from Launchpad. You will not see any security warnings." & return & return & ¬
-	"When you close this box, the script finishes up on its own: it ejects the disk image, closes this document and quits Script Editor. That is normal — it means everything worked. You can then delete the .dmg you downloaded." ¬
+	"When you close this box the script tidies up: the disk image ejects itself after a second or two, and this window closes. If anything is still open afterwards you can close it by hand — the app is already installed either way. You can delete the .dmg you downloaded." ¬
 	buttons {"Show me", "Done"} default button "Show me" with title "Install " & displayName
 set choice to button returned of result
-
--- Eject the image we installed from, so nothing is left mounted.
-if sourcePath starts with "/Volumes/" then
-	try
-		set volName to do shell script "echo " & quoted form of sourcePath & " | cut -d/ -f3"
-		do shell script "/usr/bin/hdiutil detach " & quoted form of ("/Volumes/" & volName) & " -quiet"
-	end try
-end if
 
 if choice is "Show me" then
 	tell application "Finder"
@@ -144,13 +137,37 @@ if choice is "Show me" then
 	end tell
 end if
 
--- Tidy up: close this document without offering to save, then quit Script
--- Editor. Must be last — quitting stops the script that is running. Wrapped
--- in try so a failure here never looks like an installation failure, since
--- the app is already installed by this point.
+-- ── 7. Tidy up ─────────────────────────────────────────────────────────────
+--
+-- Two things make this harder than it looks, both learned the hard way:
+--
+--   * This document lives ON the disk image, so Script Editor holds a file
+--     handle open there and a plain `hdiutil detach` fails with "Resource
+--     busy". Verified. `-force` works. Scheduling it in a detached shell also
+--     lets it run after this script has let go.
+--
+--   * You cannot reliably quit the application that is currently running your
+--     script — the quit event queues but is never processed. So quitting is
+--     best-effort, and the eject is scheduled FIRST so it still happens even
+--     if closing the document ends this script early.
+
+if sourcePath starts with "/Volumes/" then
+	try
+		set volName to do shell script "echo " & quoted form of sourcePath & " | cut -d/ -f3"
+		do shell script "(/bin/sleep 2; /usr/bin/hdiutil detach " & ¬
+			quoted form of ("/Volumes/" & volName) & " -force) >/dev/null 2>&1 &"
+	end try
+end if
+
+-- Close only the document that came off the disk image. Closing every
+-- document would throw away whatever else the user had open in Script Editor.
 try
 	tell application "Script Editor"
-		close (every document) saving no
-		quit
+		repeat with d in (every document)
+			try
+				if (path of d) contains "/Volumes/" then close d saving no
+			end try
+		end repeat
+		if (count of documents) is 0 then quit
 	end tell
 end try
