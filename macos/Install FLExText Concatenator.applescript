@@ -5,8 +5,14 @@
 --
 --  That is the only step. This script will:
 --    1. clear the macOS quarantine flag that blocks unsigned apps,
---    2. move the app into your Applications folder,
---    3. eject the disk image, then close itself and quit Script Editor.
+--    2. copy the app into your Applications folder,
+--    3. eject the disk image,
+--    4. close this document, and
+--    5. quit Script Editor.
+--
+--  So when the window disappears, it has finished — that is expected, not a
+--  crash. You will not be asked to save anything. Afterwards you can delete
+--  the .dmg you downloaded.
 --
 --  Nothing runs in the background and nothing is installed except the app
 --  itself. You can read this whole script first — it is short.
