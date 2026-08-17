@@ -1,25 +1,53 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 --  INSTALL — FLExText Concatenator
+-- ═══════════════════════════════════════════════════════════════════════════
 --
---    ▶  PRESS THE RUN BUTTON ABOVE  (the ▶ triangle, or press Command-R)
+--  ─────────────────────────────────────────────────────────────────────────
+--   WHAT YOU DO — three clicks
+--  ─────────────────────────────────────────────────────────────────────────
 --
---  That is the only step. This script will:
---    1. clear the macOS quarantine flag that blocks unsigned apps,
---    2. copy the app into your Applications folder,
---    3. eject the disk image,
---    4. close this document, and
---    5. quit Script Editor.
+--    1.  Click the  ▶  Run button at the top of this window
+--        (or press Command-R).
 --
---  So when the window disappears, it has finished — that is expected, not a
---  crash. You will not be asked to save anything. Afterwards you can delete
---  the .dmg you downloaded.
+--    2.  A box asks whether to install. Click  Yes.
+--        (If the app is already installed, a second box asks whether to
+--         replace it. Click  Replace.)
+--
+--    3.  A box says it is done. Click  Done  —  or  Show me  to open your
+--        Applications folder with the app selected.
+--
+--  That is everything. You do not need to drag anything, open Terminal, or
+--  change any settings.
+--
+--  ─────────────────────────────────────────────────────────────────────────
+--   WHAT THE SCRIPT DOES — you do not do these
+--  ─────────────────────────────────────────────────────────────────────────
+--
+--    •  Clears the macOS quarantine flag that blocks unsigned apps.
+--    •  Copies the app into your Applications folder.
+--    •  Ejects the disk image.
+--    •  Closes this document.
+--    •  Quits Script Editor.
+--
+--  Because the last two are the script's own doing, this window will close
+--  and Script Editor will quit on its own once it finishes. That means it
+--  WORKED — it is not a crash, and you will not be asked to save anything.
+--
+--  Afterwards: open FLExText Concatenator from your Applications folder or
+--  from Launchpad. You can delete the .dmg file you downloaded.
+--
+--  ─────────────────────────────────────────────────────────────────────────
+--   WHY AN INSTALL SCRIPT AT ALL
+--  ─────────────────────────────────────────────────────────────────────────
+--
+--  This app is not signed with a paid Apple certificate, so macOS quarantines
+--  it and refuses to open it. This file is a script DOCUMENT, not a program,
+--  so macOS does not block it — Script Editor does the running, and Script
+--  Editor is already trusted.
 --
 --  Nothing runs in the background and nothing is installed except the app
---  itself. You can read this whole script first — it is short.
---
---  This is a script DOCUMENT, not an application, so macOS does not block it
---  the way it blocks the app. Script Editor does the running, and Script
---  Editor is already trusted.
+--  itself. Everything the script does is in the lines below; it is short
+--  enough to read first, and you are welcome to.
 -- ═══════════════════════════════════════════════════════════════════════════
 
 set appName to "FLExText Concatenator.app"
