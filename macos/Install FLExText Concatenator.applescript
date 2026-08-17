@@ -6,7 +6,7 @@
 --  That is the only step. This script will:
 --    1. clear the macOS quarantine flag that blocks unsigned apps,
 --    2. move the app into your Applications folder,
---    3. eject the disk image and tell you how to launch it.
+--    3. eject the disk image, then close itself and quit Script Editor.
 --
 --  Nothing runs in the background and nothing is installed except the app
 --  itself. You can read this whole script first — it is short.
@@ -16,7 +16,7 @@
 --  Editor is already trusted.
 -- ═══════════════════════════════════════════════════════════════════════════
 
-set appName to "flextext-concat.app"
+set appName to "FLExText Concatenator.app"
 set hiddenName to "." & appName
 set displayName to "FLExText Concatenator"
 
@@ -102,3 +102,14 @@ if choice is "Show me" then
 		activate
 	end tell
 end if
+
+-- Tidy up: close this document without offering to save, then quit Script
+-- Editor. Must be last — quitting stops the script that is running. Wrapped
+-- in try so a failure here never looks like an installation failure, since
+-- the app is already installed by this point.
+try
+	tell application "Script Editor"
+		close (every document) saving no
+		quit
+	end tell
+end try

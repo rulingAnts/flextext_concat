@@ -120,7 +120,8 @@ python app.py
 
 ```bash
 pip install pyinstaller
-pyinstaller --onefile --windowed --name flextext-concat app.py
+pyinstaller --onefile --windowed --name "FLExText Concatenator" \
+  --icon assets/icon.icns app.py
 ```
 
 ---
@@ -135,6 +136,7 @@ matching.py       Fuzzy .flextext ↔ audio filename matching (no Qt)
 audio.py          ffmpeg discovery, duration probing, concatenation
 bin/              Placeholder for the bundled ffmpeg binary
 tests/            pytest suite for the engine and the matcher
+assets/           App icon sources (rebuild: python3 assets/make_icon.py)
 macos/            Install script shipped inside the macOS .dmg
 docs/             GitHub Pages documentation site
 ```

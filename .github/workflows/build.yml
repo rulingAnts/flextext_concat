@@ -141,7 +141,7 @@ jobs:
         if: runner.os == 'macOS'
         run: >
           python -m PyInstaller
-          --onedir --windowed --name flextext-concat
+          --onedir --windowed --name "FLExText Concatenator"
           --icon assets/icon.icns
           --add-data "bin:bin"
           --add-data "assets/icon.png:assets"
@@ -155,7 +155,7 @@ jobs:
         shell: bash
         run: >
           python -m PyInstaller
-          --onefile --windowed --name flextext-concat
+          --onefile --windowed --name "FLExText Concatenator"
           --icon assets/icon.ico
           --add-data "bin:bin"
           --add-data "assets/icon.png:assets"
@@ -185,14 +185,14 @@ jobs:
         if: runner.os == 'macOS'
         env:
           QT_QPA_PLATFORM: offscreen
-        run: ./dist/flextext-concat.app/Contents/MacOS/flextext-concat --smoke-test
+        run: '"./dist/FLExText Concatenator.app/Contents/MacOS/FLExText Concatenator" --smoke-test' 
 
       - name: Smoke test (Windows)
         if: runner.os == 'Windows'
         shell: bash
         env:
           QT_QPA_PLATFORM: offscreen
-        run: ./dist/flextext-concat.exe --smoke-test
+        run: '"./dist/FLExText Concatenator.exe" --smoke-test'
 
       - name: Smoke test (Linux)
         if: runner.os == 'Linux'
@@ -210,19 +210,19 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           mkdir -p dmgroot
-          mv dist/flextext-concat.app "dmgroot/.flextext-concat.app"
+          mv "dist/FLExText Concatenator.app" "dmgroot/.FLExText Concatenator.app"
           cp "macos/Install FLExText Concatenator.applescript" dmgroot/
           hdiutil create \
             -volname "FLExText Concatenator" \
             -srcfolder dmgroot \
             -ov -format UDZO \
-            flextext-concat-macos-arm64.dmg
-          hdiutil imageinfo flextext-concat-macos-arm64.dmg | head -5
+            FLExText-Concatenator-macos-arm64.dmg
+          hdiutil imageinfo FLExText-Concatenator-macos-arm64.dmg | head -5
 
       - name: Package — Windows → rename exe
         if: runner.os == 'Windows'
         shell: pwsh
-        run: Copy-Item dist\flextext-concat.exe flextext-concat-windows-x86_64.exe
+        run: Copy-Item 'dist\FLExText Concatenator.exe' FLExText-Concatenator-windows-x86_64.exe
 
       - name: Package — Linux → AppImage
         if: runner.os == 'Linux'
@@ -254,27 +254,27 @@ jobs:
           wget -q \
             https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
           chmod +x appimagetool-x86_64.AppImage
-          ARCH=x86_64 ./appimagetool-x86_64.AppImage AppDir flextext-concat-linux-amd64.AppImage
+          ARCH=x86_64 ./appimagetool-x86_64.AppImage AppDir FLExText-Concatenator-linux-amd64.AppImage
 
       # ── Upload artifacts ───────────────────────────────────────────────────
 
       - uses: actions/upload-artifact@v4
         if: runner.os == 'macOS'
         with:
-          name: flextext-concat-macos-arm64
-          path: flextext-concat-macos-arm64.dmg
+          name: FLExText-Concatenator-macos-arm64
+          path: FLExText-Concatenator-macos-arm64.dmg
 
       - uses: actions/upload-artifact@v4
         if: runner.os == 'Windows'
         with:
-          name: flextext-concat-windows-x86_64
-          path: flextext-concat-windows-x86_64.exe
+          name: FLExText-Concatenator-windows-x86_64
+          path: FLExText-Concatenator-windows-x86_64.exe
 
       - uses: actions/upload-artifact@v4
         if: runner.os == 'Linux'
         with:
-          name: flextext-concat-linux-amd64
-          path: flextext-concat-linux-amd64.AppImage
+          name: FLExText-Concatenator-linux-amd64
+          path: FLExText-Concatenator-linux-amd64.AppImage
 
       # ── GitHub Release (tag pushes only) ───────────────────────────────────
       # All three matrix jobs run this step; each uploads only its own file.
@@ -285,6 +285,6 @@ jobs:
         with:
           fail_on_unmatched_files: false
           files: |
-            flextext-concat-macos-arm64.dmg
-            flextext-concat-windows-x86_64.exe
-            flextext-concat-linux-amd64.AppImage
+            FLExText-Concatenator-macos-arm64.dmg
+            FLExText-Concatenator-windows-x86_64.exe
+            FLExText-Concatenator-linux-amd64.AppImage
