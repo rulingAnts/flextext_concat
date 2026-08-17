@@ -43,6 +43,7 @@ from PySide6.QtWidgets import (
     QSpinBox,
     QSplitter,
     QStackedWidget,
+    QTabWidget,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -82,16 +83,16 @@ OUTPUT_MODES = [
 # FLEx discards segnum on import, so removing it is the safe default; the other
 # two exist for tools that do read it.  See flextext.SEGNUM_* for the detail.
 SEGNUM_CHOICES = [
-    ("Remove — let FLEx number the text", fx.SEGNUM_STRIP),
-    ("Renumber continuously (1…N)",       fx.SEGNUM_RENUMBER),
-    ("Keep each text's original numbers", fx.SEGNUM_KEEP),
+    ("Remove (FLEx numbers it)", fx.SEGNUM_STRIP),
+    ("Renumber 1…N",            fx.SEGNUM_RENUMBER),
+    ("Keep original numbers",   fx.SEGNUM_KEEP),
 ]
 
 # Discarding is the default because it needs nothing from the user; shifting
 # assumes the source audio really will be concatenated in the same order.
 AUDIO_CHOICES = [
-    ("Discard (offsets point at per-text audio)", fx.AUDIO_DISCARD),
-    ("Shift onto one concatenated recording",     fx.AUDIO_SHIFT),
+    ("Discard segmentation",        fx.AUDIO_DISCARD),
+    ("Shift onto joined recording", fx.AUDIO_SHIFT),
 ]
 
 REGEX_SORT_MODES = [
@@ -877,7 +878,7 @@ class CorpusOptionsPanel(QWidget):
         note.setStyleSheet(_OK_STYLE)
         layout.addWidget(note)
 
-        self.strip_guids_cb = QCheckBox("Strip text GUIDs (import as new texts)")
+        self.strip_guids_cb = QCheckBox("Strip text GUIDs (import as new)")
         self.strip_guids_cb.setToolTip(
             "FLEx uses the GUID of each text to detect duplicates on import.\n"
             "Leave this off to keep GUIDs, so re-importing updates the existing\n"
@@ -924,7 +925,7 @@ class CombinedOptionsPanel(QWidget):
 
         # ── Audio segmentation (right column) ───────────────────────────────
         audio_row = QHBoxLayout()
-        audio_row.addWidget(QLabel("Audio segmentation:"))
+        audio_row.addWidget(QLabel("Audio:"))
         self.audio_combo = QComboBox()
         for label, _ in AUDIO_CHOICES:
             self.audio_combo.addItem(label)
@@ -947,7 +948,7 @@ class CombinedOptionsPanel(QWidget):
         shift_layout.setSpacing(4)
 
         gap_row = QHBoxLayout()
-        gap_row.addWidget(QLabel("Gap between texts:"))
+        gap_row.addWidget(QLabel("Gap:"))
         self.gap_spin = QSpinBox()
         self.gap_spin.setRange(0, 600000)
         self.gap_spin.setValue(fx.DEFAULT_GAP_MS)
@@ -961,7 +962,7 @@ class CombinedOptionsPanel(QWidget):
             "Use 0 for plain gapless concatenation."
         )
         gap_row.addWidget(self.gap_spin)
-        reset_btn = QPushButton("Match Audio Concatenator")
+        reset_btn = QPushButton("Reset")
         reset_btn.setToolTip(f"Set the gap back to {fx.DEFAULT_GAP_MS} ms.")
         reset_btn.clicked.connect(
             lambda: self.gap_spin.setValue(fx.DEFAULT_GAP_MS))
@@ -970,7 +971,7 @@ class CombinedOptionsPanel(QWidget):
         shift_layout.addLayout(gap_row)
 
         self.join_audio_cb = QCheckBox(
-            "Join the matched recordings into one audio file")
+            "Join recordings into one audio file")
         self.join_audio_cb.setChecked(True)
         self.join_audio_cb.setToolTip(
             "Writes the combined audio alongside the combined text, in the same\n"
@@ -984,7 +985,7 @@ class CombinedOptionsPanel(QWidget):
         shift_layout.addWidget(self.join_audio_cb)
 
         self.distribute_cb = QCheckBox(
-            "Spread lines evenly across texts that have audio but no segmentation")
+            "Spread lines evenly where audio has no segmentation")
         self.distribute_cb.setChecked(True)
         self.distribute_cb.setToolTip(
             "ELAN cannot show an annotation without a time slot, so a text with\n"
@@ -997,7 +998,7 @@ class CombinedOptionsPanel(QWidget):
         shift_layout.addWidget(self.distribute_cb)
 
         media_row = QHBoxLayout()
-        self.media_label = QLabel("Combined audio:")
+        self.media_label = QLabel("Audio out:")
         media_row.addWidget(self.media_label)
         self.media_edit = QLineEdit()
         self.media_edit.setPlaceholderText(
@@ -1036,7 +1037,7 @@ class CombinedOptionsPanel(QWidget):
         text_col.addLayout(title_row)
 
         self.title_notes_cb = QCheckBox(
-            "Add each source text's title as a note on its first line")
+            "Source title as a note on the first line")
         self.title_notes_cb.setChecked(True)
         self.title_notes_cb.setToolTip(
             "Records where each original text begins. FLEx shows this on the\n"
@@ -1046,7 +1047,7 @@ class CombinedOptionsPanel(QWidget):
         text_col.addWidget(self.title_notes_cb)
 
         segnum_row = QHBoxLayout()
-        segnum_row.addWidget(QLabel("Line numbers (segnum):"))
+        segnum_row.addWidget(QLabel("Line numbers:"))
         self.segnum_combo = QComboBox()
         for label, _ in SEGNUM_CHOICES:
             self.segnum_combo.addItem(label)
@@ -1067,7 +1068,7 @@ class CombinedOptionsPanel(QWidget):
         text_col.addLayout(segnum_row)
 
         self.strip_notes_cb = QCheckBox(
-            "Strip audio timestamp notes (e.g. “audio ~0:00.000–0:02.421”)")
+            "Strip audio timestamp notes")
         self.strip_notes_cb.setChecked(True)
         self.strip_notes_cb.setToolTip(
             "Removes note items whose entire content is an audio timestamp.\n"
@@ -1117,7 +1118,7 @@ class CombinedOptionsPanel(QWidget):
     def _on_join_audio_toggled(self, joining: bool):
         self.distribute_cb.setEnabled(joining)
         self.media_label.setText(
-            "Write joined audio to:" if joining else "Combined audio:")
+            "Audio out:" if joining else "Media path:")
         self.media_edit.setPlaceholderText(
             "Where to write the joined recording…" if joining
             else "Path or URL of the joined recording (optional)…")
@@ -1274,8 +1275,8 @@ class MainWindow(QMainWindow):
         # Small minimum + generous default: the content sits in a scroll area,
         # so a cramped window (or a high-DPI laptop at 125 % scaling) grows
         # scrollbars instead of crushing widgets into each other.
-        self.setMinimumSize(720, 480)
-        self.resize(1080, 900)
+        self.setMinimumSize(640, 420)
+        self.resize(1040, 760)
         self._worker: Optional[CombineWorker] = None
         self._thread: Optional[QThread] = None
         # Parsed metadata per path, for list labels, title sorting and the
@@ -1302,7 +1303,20 @@ class MainWindow(QMainWindow):
         scroll.setWidget(central)
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self.setCentralWidget(scroll)
+
+        # The output path and Combine button live OUTSIDE the scroll area, so
+        # the primary action can never scroll out of reach on a small window.
+        container = QWidget()
+        outer = QVBoxLayout(container)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(scroll, 1)
+        footer = QWidget()
+        self._footer = QVBoxLayout(footer)
+        self._footer.setContentsMargins(10, 6, 10, 8)
+        self._footer.setSpacing(6)
+        outer.addWidget(footer)
+        self.setCentralWidget(container)
 
         # ── Load row ────────────────────────────────────────────────────────
         load_row = QHBoxLayout()
@@ -1384,7 +1398,9 @@ class MainWindow(QMainWindow):
         self._splitter.setStretchFactor(1, 1)
         self._splitter.setChildrenCollapsible(False)
         # Keep the table usable even when the scroll area is doing the work.
-        self.table.setMinimumHeight(180)
+        self.table.setMinimumHeight(120)
+        self.unmatched_list.setMinimumWidth(140)
+        self._splitter.setSizes([700, 240])
         root.addWidget(self._splitter, 1)
 
         list_btns = QHBoxLayout()
@@ -1399,7 +1415,18 @@ class MainWindow(QMainWindow):
         list_btns.addWidget(self.count_label)
         root.addLayout(list_btns)
 
-        # ── Sort mode toggle ─────────────────────────────────────────────────
+        # ── Options tabs ─────────────────────────────────────────────────────
+        # Sorting and output options are separate decisions and were stacked
+        # vertically, so both competed for height with the file table. As tabs
+        # only one is on screen at a time, which is what actually fixes the
+        # crowding — scrolling alone just made a tall wall scrollable.
+        self._options_tabs = QTabWidget()
+
+        # -- Sort tab --
+        sort_tab = QWidget()
+        sort_layout = QVBoxLayout(sort_tab)
+        sort_layout.setSpacing(6)
+
         mode_row = QHBoxLayout()
         mode_row.addWidget(QLabel("Sort mode:"))
         self._mode_group = QButtonGroup(self)
@@ -1412,38 +1439,28 @@ class MainWindow(QMainWindow):
         mode_row.addWidget(self._radio_simple)
         mode_row.addWidget(self._radio_adv)
         mode_row.addStretch()
-        load_settings_btn = QPushButton("Load Settings…")
-        load_settings_btn.setToolTip("Load settings from a YAML file")
-        load_settings_btn.clicked.connect(self._load_settings)
-        save_settings_btn = QPushButton("Save Settings…")
-        save_settings_btn.setToolTip("Save current settings to a YAML file")
-        save_settings_btn.clicked.connect(self._save_settings)
-        mode_row.addWidget(load_settings_btn)
-        mode_row.addWidget(save_settings_btn)
-        root.addLayout(mode_row)
+        sort_layout.addLayout(mode_row)
 
-        # ── Stacked sort panels ──────────────────────────────────────────────
         self._sort_stack = QStackedWidget()
-
         self.gui_panel = GuiSortPanel()
         self.gui_panel.apply_sort_btn.clicked.connect(self._on_apply_sort)
         self._sort_stack.addWidget(self.gui_panel)    # index 0
-
         self.regex_panel = RegexSortPanel()
         self.regex_panel.apply_btn.clicked.connect(self._on_apply_regex_sort)
         self._sort_stack.addWidget(self.regex_panel)  # index 1
+        sort_layout.addWidget(self._sort_stack)
+        sort_layout.addStretch()
+        self._options_tabs.addTab(sort_tab, "Sort")
 
-        root.addWidget(self._sort_stack)
-
-        # ── Output mode ──────────────────────────────────────────────────────
-        out_mode_box = QGroupBox("Combine as")
-        out_mode_layout = QVBoxLayout(out_mode_box)
+        # -- Combine as tab --
+        combine_tab = QWidget()
+        out_mode_layout = QVBoxLayout(combine_tab)
         out_mode_layout.setSpacing(6)
 
         out_row = QHBoxLayout()
         self._out_group = QButtonGroup(self)
-        self._radio_corpus   = QRadioButton("Corpus — individual texts, one file")
-        self._radio_combined = QRadioButton("Combined Text — one text in FLEx")
+        self._radio_corpus   = QRadioButton("Corpus — separate texts")
+        self._radio_combined = QRadioButton("Combined Text — one text")
         self._radio_corpus.setChecked(True)
         self._out_group.addButton(self._radio_corpus,   0)
         self._out_group.addButton(self._radio_combined, 1)
@@ -1451,6 +1468,14 @@ class MainWindow(QMainWindow):
         out_row.addWidget(self._radio_corpus)
         out_row.addWidget(self._radio_combined)
         out_row.addStretch()
+        load_settings_btn = QPushButton("Load Settings…")
+        load_settings_btn.setToolTip("Load settings from a YAML file")
+        load_settings_btn.clicked.connect(self._load_settings)
+        save_settings_btn = QPushButton("Save Settings…")
+        save_settings_btn.setToolTip("Save current settings to a YAML file")
+        save_settings_btn.clicked.connect(self._save_settings)
+        out_row.addWidget(load_settings_btn)
+        out_row.addWidget(save_settings_btn)
         out_mode_layout.addLayout(out_row)
 
         self._out_stack = QStackedWidget()
@@ -1459,7 +1484,11 @@ class MainWindow(QMainWindow):
         self._out_stack.addWidget(self.corpus_panel)    # index 0
         self._out_stack.addWidget(self.combined_panel)  # index 1
         out_mode_layout.addWidget(self._out_stack)
-        root.addWidget(out_mode_box)
+        out_mode_layout.addStretch()
+        self._options_tabs.addTab(combine_tab, "Combine as")
+        self._options_tabs.setCurrentIndex(1)   # the decision users make first
+
+        root.addWidget(self._options_tabs)
 
         # ── Output row ───────────────────────────────────────────────────────
         output_row = QHBoxLayout()
@@ -1470,7 +1499,7 @@ class MainWindow(QMainWindow):
         browse_btn.clicked.connect(self._on_browse_output)
         output_row.addWidget(self.output_edit, 1)
         output_row.addWidget(browse_btn)
-        root.addLayout(output_row)
+        self._footer.addLayout(output_row)
 
         # ── Progress + Combine row ───────────────────────────────────────────
         run_row = QHBoxLayout()
@@ -1486,7 +1515,7 @@ class MainWindow(QMainWindow):
         run_row.addWidget(self.cancel_btn)
         run_row.addStretch()
         run_row.addWidget(self.combine_btn)
-        root.addLayout(run_row)
+        self._footer.addLayout(run_row)
 
         # Establish the corpus/combined enabled-state; setChecked() during
         # construction fires no toggle, so the initial pass is explicit.
