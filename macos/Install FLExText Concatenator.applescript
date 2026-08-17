@@ -119,7 +119,14 @@ on error errMsg
 end try
 
 -- ── 6. Done ────────────────────────────────────────────────────────────────
-display dialog displayName & " is installed." & return & return & "Open it from your Applications folder or from Launchpad — you will not see any security warnings." & return & return & "You can now eject the disk image and delete the .dmg file." buttons {"Show me", "Done"} default button "Show me" with title "Install " & displayName
+-- Success is announced BEFORE any tidying up, and it says what the tidying
+-- will be — the previous wording told the user to eject the disk image
+-- themselves moments before the script ejected it, and never mentioned that
+-- the window was about to close.
+display dialog "✓  " & displayName & " is installed." & return & return & ¬
+	"Open it from your Applications folder or from Launchpad. You will not see any security warnings." & return & return & ¬
+	"When you close this box, the script finishes up on its own: it ejects the disk image, closes this document and quits Script Editor. That is normal — it means everything worked. You can then delete the .dmg you downloaded." ¬
+	buttons {"Show me", "Done"} default button "Show me" with title "Install " & displayName
 set choice to button returned of result
 
 -- Eject the image we installed from, so nothing is left mounted.
