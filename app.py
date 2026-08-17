@@ -955,20 +955,29 @@ class CombinedOptionsPanel(QWidget):
         self.gap_spin.setSuffix(" ms")
         self.gap_spin.setFixedWidth(110)
         self.gap_spin.setToolTip(
-            "Silence inserted between texts in the concatenated audio.\n\n"
-            f"{fx.DEFAULT_GAP_MS} ms is what the Audio Concatenator app adds "
-            "between files\n(500 ms silence + 5 ms click + 500 ms silence), so "
-            "leaving it\nat that value keeps the two apps' outputs aligned.\n"
-            "Use 0 for plain gapless concatenation."
+            f"{fx.DEFAULT_GAP_MS} ms inserts the click marker: 500 ms silence "
+            f"+ 5 ms click\n+ 500 ms silence — the same separator the Audio "
+            f"Concatenator uses.\nAny other value inserts plain silence of "
+            f"that length. 0 is gapless.\n\n"
+            f"The click is 220 samples at 44.1 kHz, so the marker really runs\n"
+            f"1004.99 ms rather than a round 1005. Offsets are shifted by the\n"
+            f"measured length, not the nominal one, so this never accumulates."
         )
         gap_row.addWidget(self.gap_spin)
-        reset_btn = QPushButton("Reset")
-        reset_btn.setToolTip(f"Set the gap back to {fx.DEFAULT_GAP_MS} ms.")
+        reset_btn = QPushButton("Click marker")
+        reset_btn.setToolTip(
+            f"Set the gap to {fx.DEFAULT_GAP_MS} ms — the click marker: "
+            f"500 ms silence + 5 ms click + 500 ms silence.")
         reset_btn.clicked.connect(
             lambda: self.gap_spin.setValue(fx.DEFAULT_GAP_MS))
         gap_row.addWidget(reset_btn)
         gap_row.addStretch()
         shift_layout.addLayout(gap_row)
+
+        self.gap_note = QLabel()
+        self.gap_note.setWordWrap(True)
+        self.gap_note.setStyleSheet("color: palette(mid); font-size: 11px;")
+        shift_layout.addWidget(self.gap_note)
 
         self.join_audio_cb = QCheckBox(
             "Join recordings into one audio file")
@@ -1117,6 +1126,20 @@ class CombinedOptionsPanel(QWidget):
 
     def _on_join_audio_toggled(self, joining: bool):
         self.distribute_cb.setEnabled(joining)
+        # The gap means two different things. When this app writes the audio it
+        # IS the separator, so it is exact and needs no matching. When someone
+        # else joins the audio it is a claim about their tool, and a wrong
+        # value silently desyncs everything.
+        if joining:
+            self.gap_note.setText(
+                "This app inserts this gap itself, so it is exact — offsets are "
+                "shifted by the length actually written."
+            )
+        else:
+            self.gap_note.setText(
+                "⚠ Must match the gap your joining tool inserts. Audio "
+                "Concatenator uses 1005 ms; plain concatenation is 0."
+            )
         self.media_label.setText(
             "Audio out:" if joining else "Media path:")
         self.media_edit.setPlaceholderText(
